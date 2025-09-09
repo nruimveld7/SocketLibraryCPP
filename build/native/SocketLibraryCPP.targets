@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <SocketLibraryCPP_LibDir>$(MSBuildThisFileDirectory)lib\$(Platform)\$(Configuration)\</SocketLibraryCPP_LibDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalLibraryDirectories>
+        $(SocketLibraryCPP_LibDir);%(AdditionalLibraryDirectories)
+      </AdditionalLibraryDirectories>
+      <AdditionalDependencies>
+        SocketLibraryCPP.lib;%(AdditionalDependencies)
+      </AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+</Project>

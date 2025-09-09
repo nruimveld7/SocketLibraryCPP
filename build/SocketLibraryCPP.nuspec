@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>SocketLibraryCPP</id>
+    <version>1.0.0</version>
+    <authors>Noah Ruimveld</authors>
+    <owners>Noah Ruimveld</owners>
+    <description>Windows static socket library.</description>
+    <license type="file">LICENSE</license>
+    <repository type="git" url="https://github.com/nruin7/SocketLibraryCPP.git" />
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>native sockets winsock msvc staticlib</tags>
+  </metadata>
+  <files>
+    <!-- Headers staged inside the package under build/native/include -->
+    <file src="include\**\*.*" target="build\native\include" />
+    <!-- MSBuild integration -->
+    <file src="build\native\SocketLibraryCPP.props" target="build\native\SocketLibraryCPP.props" />
+    <file src="build\native\SocketLibraryCPP.targets" target="build\native\SocketLibraryCPP.targets" />
+    <!-- x64 libs (and optional PDBs) -->
+    <file src="lib\SocketLibraryCPP\x64\Debug\SocketLibraryCPP.lib" target="build\native\lib\x64\Debug\" />
+    <file src="lib\SocketLibraryCPP\x64\Release\SocketLibraryCPP.lib" target="build\native\lib\x64\Release\" />
+    <file src="lib\SocketLibraryCPP\x64\**\*.pdb" target="build\native\lib\x64\" />
+    <!-- Win32 libs (and optional PDBs) -->
+    <file src="lib\SocketLibraryCPP\Win32\Debug\SocketLibraryCPP.lib" target="build\native\lib\Win32\Debug\" />
+    <file src="lib\SocketLibraryCPP\Win32\Release\SocketLibraryCPP.lib" target="build\native\lib\Win32\Release\" />
+    <file src="lib\SocketLibraryCPP\Win32\**\*.pdb" target="build\native\lib\Win32\" />
+    <!-- root docs -->
+    <file src="README.md" />
+    <file src="LICENSE" />
+  </files>
+</package>

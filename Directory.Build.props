@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)'))</RepoRoot>
+    <RepoRoot Condition="!HasTrailingSlash('$(RepoRoot)')">$(RepoRoot)\</RepoRoot>
+    <UseRepoLayout Condition="'$(UseRepoLayout)'==''">true</UseRepoLayout>
+  </PropertyGroup>
+  <Choose>
+    <When Condition="'$(UseRepoLayout)'=='true' and '$(MSBuildProjectExtension)'=='.vcxproj'">
+      <PropertyGroup Condition="'$(ConfigurationType)'!='StaticLibrary'">
+        <OutDir>$(RepoRoot)bin\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</OutDir>
+        <IntDir>$(RepoRoot)intermediate\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</IntDir>
+      </PropertyGroup>
+    </When>
+  </Choose>
+</Project>

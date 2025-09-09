@@ -1,0 +1,69 @@
+# VS user/workspace
+.vs/
+*.user
+*.suo
+
+# Build outputs
+**/Debug/
+**/Release/
+x64/
+Win32/
+intermediate/
+lib/
+bin/
+
+# MSVC intermediates
+*.obj
+*.iobj
+*.pch
+*.pchi
+*.ipch
+*.pdb
+*.idb
+*.ilk
+*.tlog
+*.lastbuildstate
+*.opendb
+*.VC.db*
+
+# Logs
+*.log
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+artifacts/
+.nuget/
+build/*nupkg
+build/_pkgview/
+_pkgview/
+
+# CMake (if ever used)
+[Cc]MakeFiles/
+CMakeCache.txt
+CMakeLists.txt.user
+cmake-build-*/
+
+# OS cruft
+*.DS_Store
+Thumbs.db
+
+# Extra MSVC/VS
+*.aps
+*.res
+*.rsp
+*.sdf
+*.sln.docstates
+*.tli
+*.tlh
+
+# Misc temp/backup
+*.tmp
+*.bak
+*.cache
+
+# NuGet extras
+*.nupkg.sha512
+project.lock.json
+project.assets.json
