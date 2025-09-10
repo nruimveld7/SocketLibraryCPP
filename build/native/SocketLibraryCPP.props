@@ -1,15 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
   <PropertyGroup Label="SocketLibraryCPP">
-    <SocketLibraryCPP_IncludeDir Condition="'$(SocketLibraryCPP_IncludeDir)' == ''">
-      $(MSBuildThisFileDirectory)include
+    <SocketLibraryCPP_PackageRoot>$(MSBuildThisFileDirectory)</SocketLibraryCPP_PackageRoot>
+    <SocketLibraryCPP_LibName Condition="'$(SocketLibraryCPP_LibName)'==''">SocketLibraryCPP.lib</SocketLibraryCPP_LibName>
+    <SocketLibraryCPP_IncludeDir Condition="'$(SocketLibraryCPP_IncludeDir)'==''">
+      $(SocketLibraryCPP_PackageRoot)include
     </SocketLibraryCPP_IncludeDir>
+    <!-- Default to the consumer's Configuration -->
+    <SocketLibraryCPP_BinaryConfig Condition="'$(SocketLibraryCPP_BinaryConfig)'==''">$(Configuration)</SocketLibraryCPP_BinaryConfig>
   </PropertyGroup>
-  <ItemDefinitionGroup>
-    <ClCompile>
-      <AdditionalIncludeDirectories>
-        $(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)
-      </AdditionalIncludeDirectories>
-    </ClCompile>
-  </ItemDefinitionGroup>
+
+  <!-- If the exact config’s .lib exists, use it; otherwise fall back to Release -->
+  <Choose>
+    <When Condition="Exists('$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_BinaryConfig)\$(SocketLibraryCPP_LibName)')">
+      <PropertyGroup>
+        <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_BinaryConfig)\</SocketLibraryCPP_LibDir>
+      </PropertyGroup>
+    </When>
+    <Otherwise>
+      <PropertyGroup>
+        <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\Release\</SocketLibraryCPP_LibDir>
+      </PropertyGroup>
+    </Otherwise>
+  </Choose>
+
 </Project>
