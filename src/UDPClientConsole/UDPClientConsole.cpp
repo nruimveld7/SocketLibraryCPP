@@ -4,8 +4,8 @@
 #include <limits>
 #include <thread>
 #include <mutex>
+#include <Windows.h>
 
-#define NOMINMAX
 #define UDPSOCKET
 #include "SocketLibrary.h"
 
