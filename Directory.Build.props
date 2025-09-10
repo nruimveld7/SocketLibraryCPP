@@ -13,4 +13,12 @@
       </PropertyGroup>
     </When>
   </Choose>
+  <!-- Fires for any project under this directory tree -->
+  <Target Name="CheckSocketLibraryPackage"
+          BeforeTargets="ClCompile"
+          Condition="'$(Configuration)'=='NuGet'">
+    <Error Code="SL1001"
+           Text="SocketLibraryCPP NuGet package not restored. Run build/pack.cmd to create the .nupkg, ensure NuGet.Config points to your local feed, then rebuild."
+           Condition="'$(SocketLibraryCPP_IncludeDir)'==''" />
+  </Target>
 </Project>

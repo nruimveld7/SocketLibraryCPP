@@ -93,8 +93,8 @@ Write-Host "NuGet:   $NuGetExe" -ForegroundColor Green
 # Always build (Win32/x64 × Debug/Release)
 # ---------------------------
 $matrix = @(
-  @{ Platform='Win32'; Configuration='Debug'   }
-  @{ Platform='Win32'; Configuration='Release' }
+  @{ Platform='x86'; Configuration='Debug'   }
+  @{ Platform='x86'; Configuration='Release' }
   @{ Platform='x64'  ; Configuration='Debug'   }
   @{ Platform='x64'  ; Configuration='Release' }
 )
