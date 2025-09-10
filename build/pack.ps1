@@ -118,54 +118,32 @@ Get-ChildItem -Path $outputDir -Filter *.nupkg -ErrorAction SilentlyContinue |
 Write-Host "Packing via nuspec..." -ForegroundColor Cyan
 & $NuGetExe pack $Nuspec -BasePath $repoRoot -NoDefaultExcludes -Verbosity detailed -OutputDirectory $outputDir | Out-Host
 
-# Find the newly produced nupkg (latest write)
+# ---------------------------
+# Find newest .nupkg and derive identity from filename
+# ---------------------------
 $pkgFile = Get-ChildItem -Path $outputDir -Filter *.nupkg |
            Sort-Object LastWriteTimeUtc -Descending |
            Select-Object -First 1
 
 if (-not $pkgFile) { throw "No .nupkg found in $outputDir after packing." }
 
-# ---------------------------
-# Read identity from embedded nuspec and normalize name
-# ---------------------------
-function Get-PackageIdentityFromNupkg {
-  param([Parameter(Mandatory)][string]$Path)
-  Add-Type -AssemblyName System.IO.Compression.FileSystem
-  $fs  = [System.IO.File]::OpenRead($Path)
-  try {
-    $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Read, $false)
-    $entry = $zip.Entries | Where-Object { $_.FullName -like '*.nuspec' } | Select-Object -First 1
-    if (-not $entry) { throw "Embedded .nuspec not found in package $Path" }
-    $sr = New-Object System.IO.StreamReader($entry.Open())
-    try {
-      [xml]$xml = $sr.ReadToEnd()
-    } finally {
-      $sr.Dispose()
-    }
-    [pscustomobject]@{
-      Id      = $xml.package.metadata.id
-      Version = $xml.package.metadata.version  # already normalized by nuget (e.g., 1.0 -> 1.0.0)
-    }
-  } finally {
-    $zip.Dispose()
-    $fs.Dispose()
-  }
-}
+# Filename without extension, e.g. "My.Package.Id.1.0.3-beta.1"
+$baseName = [System.IO.Path]::GetFileNameWithoutExtension($pkgFile.Name)
 
-$identity = Get-PackageIdentityFromNupkg -Path $pkgFile.FullName
-if (-not $identity.Id -or -not $identity.Version) {
-  throw "Could not read Id/Version from $($pkgFile.FullName)"
-}
+# Split on the LAST dot: left = Id (can contain dots), right = Version (can contain '-' for prerelease)
+$lastDot = $baseName.LastIndexOf('.')
+if ($lastDot -lt 1) { throw "Unexpected package filename format: '$($pkgFile.Name)'" }
 
-$finalName = '{0}.{1}.nupkg' -f $identity.Id, $identity.Version
+$id      = $baseName.Substring(0, $lastDot)
+$version = $baseName.Substring($lastDot + 1)
+
+# Build the canonical name NuGet uses
+$finalName = '{0}.{1}.nupkg' -f $id, $version
 $finalPath = Join-Path $outputDir $finalName
 
-# Rename if NuGet's filename differs (e.g., normalization or prerelease)
+# If NuGet already produced the canonical name, no rename needed
 if ($pkgFile.FullName -ne $finalPath) {
   Move-Item -LiteralPath $pkgFile.FullName -Destination $finalPath -Force
-} else {
-  # Keep the same object path if already correct
-  $finalPath = $pkgFile.FullName
 }
 
 Write-Host "Created: $finalPath" -ForegroundColor Green

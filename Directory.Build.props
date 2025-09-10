@@ -1,10 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- ===== Repo-wide paths & layout ===== -->
   <PropertyGroup>
+    <!-- Absolute repo root (with trailing slash) -->
     <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)'))</RepoRoot>
     <RepoRoot Condition="!HasTrailingSlash('$(RepoRoot)')">$(RepoRoot)\</RepoRoot>
+
+    <!-- Default to repo-style bin/int output for non-StaticLibrary vcxproj -->
     <UseRepoLayout Condition="'$(UseRepoLayout)'==''">true</UseRepoLayout>
+
+    <!-- Give NuGet a stable TFM for native projects -->
+    <TargetFramework>native</TargetFramework>
+
+    <!-- Default: use local libs (Debug/Release). NuGet only for NuGet config -->
+    <UseSocketLibFromNuGet>false</UseSocketLibFromNuGet>
   </PropertyGroup>
+
   <Choose>
     <When Condition="'$(UseRepoLayout)'=='true' and '$(MSBuildProjectExtension)'=='.vcxproj'">
       <PropertyGroup Condition="'$(ConfigurationType)'!='StaticLibrary'">
@@ -13,12 +25,44 @@
       </PropertyGroup>
     </When>
   </Choose>
-  <!-- Fires for any project under this directory tree -->
+
+  <!-- Flip on when building the NuGet config -->
+  <PropertyGroup Condition="'$(Configuration)'=='NuGet'">
+    <UseSocketLibFromNuGet>true</UseSocketLibFromNuGet>
+  </PropertyGroup>
+
+  <!-- When NOT using the package, short-circuit NuGet asset resolution
+       (prevents 'Sequence contains no elements' in Debug/Release) -->
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)'=='.vcxproj'">
+    <!-- For native C++ projects, don't run the managed assets resolver -->
+    <_SkipResolvePackageAssets>true</_SkipResolvePackageAssets>
+    <ResolveNuGetPackages>false</ResolveNuGetPackages>
+  </PropertyGroup>
+
+  <!-- ===== Centralized PackageReference (applies to ALL projects) =====
+       Use a FLOATING version so you only bump in the .nuspec and repack -->
+  <ItemGroup>
+    <!-- Non-NuGet configs: allow restore, but contribute ZERO assets -->
+    <PackageReference Include="SocketLibraryCPP"
+                      Version="*"
+                      Condition="'$(UseSocketLibFromNuGet)'!='true'">
+      <ExcludeAssets>all</ExcludeAssets>
+    </PackageReference>
+
+    <!-- NuGet configs: actually consume the package -->
+    <PackageReference Include="SocketLibraryCPP"
+                      Version="*"
+                      Condition="'$(UseSocketLibFromNuGet)'=='true'"/>
+  </ItemGroup>
+
+  <!-- Early guard: if we're supposed to use the package but its props didn't set include dir,
+       it's not restored / not found on the feed -->
   <Target Name="CheckSocketLibraryPackage"
           BeforeTargets="ClCompile"
-          Condition="'$(Configuration)'=='NuGet'">
+          Condition="'$(UseSocketLibFromNuGet)'=='true'">
     <Error Code="SL1001"
-           Text="SocketLibraryCPP NuGet package not restored. Run build/pack.cmd to create the .nupkg, ensure NuGet.Config points to your local feed, then rebuild."
+           Text="SocketLibraryCPP NuGet package not restored. Run build/pack.cmd to create the .nupkg, ensure NuGet.Config points to your local 'build' feed, then rebuild."
            Condition="'$(SocketLibraryCPP_IncludeDir)'==''" />
   </Target>
+
 </Project>

@@ -2,11 +2,12 @@
 <package>
   <metadata>
     <id>SocketLibraryCPP</id>
-    <version>1.0.3</version>
+    <version>1.0.5</version>
     <authors>Noah Ruimveld</authors>
     <owners>Noah Ruimveld</owners>
     <description>Windows static socket library.</description>
     <license type="file">LICENSE</license>
+    <readme>README.md</readme>
     <repository type="git" url="https://github.com/nruin7/SocketLibraryCPP.git" />
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <tags>native sockets winsock msvc staticlib</tags>

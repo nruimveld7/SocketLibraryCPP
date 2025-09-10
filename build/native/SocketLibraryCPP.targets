@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <ItemDefinitionGroup>
+
+  <!-- Only apply package includes/libs when the consumer asked for it -->
+  <ItemDefinitionGroup Condition="'$(UseSocketLibFromNuGet)'=='true'">
     <ClCompile>
       <AdditionalIncludeDirectories>$(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -9,4 +11,5 @@
       <AdditionalDependencies>$(SocketLibraryCPP_LibName);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
+
 </Project>

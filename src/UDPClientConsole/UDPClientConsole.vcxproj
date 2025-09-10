@@ -110,19 +110,6 @@
 
   <PropertyGroup Label="UserMacros" />
 
-  <!-- ===================== Non-NuGet consolidated local include/lib ===================== -->
-  <ItemDefinitionGroup Condition="'$(Configuration)'!='NuGet'">
-    <ClCompile>
-      <!-- Your in-repo headers -->
-      <AdditionalIncludeDirectories>$(RepoRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-    </ClCompile>
-    <Link>
-      <!-- Your in-repo libs -->
-      <AdditionalLibraryDirectories>$(RepoRoot)lib\SocketLibraryCPP\$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SocketLibraryCPP.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
-  </ItemDefinitionGroup>
-
   <!-- ===== Non-NuGet: keep your per-config compiler/linker flags (minus local include) ===== -->
   <!-- Debug | Win32 -->
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -200,7 +187,6 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -210,7 +196,6 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SocketLibraryCPP_LibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
@@ -223,7 +208,6 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -233,7 +217,6 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SocketLibraryCPP_LibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
     </Link>
@@ -244,15 +227,39 @@
     <ClCompile Include="UDPClientConsole.cpp" />
   </ItemGroup>
 
+  <!-- Default: local libs -->
+  <PropertyGroup>
+    <UseSocketLibFromNuGet>false</UseSocketLibFromNuGet>
+  </PropertyGroup>
+
+  <!-- Only the NuGet configs turn this on -->
+  <PropertyGroup Condition="'$(Configuration)'=='NuGet'">
+    <UseSocketLibFromNuGet>true</UseSocketLibFromNuGet>
+  </PropertyGroup>
+
   <!-- ProjectReference ONLY for non-NuGet configs -->
-  <ItemGroup Condition="'$(Configuration)'!='NuGet'">
+  <ItemGroup Condition="'$(UseSocketLibFromNuGet)'!='true'">
     <ProjectReference Include="$(RepoRoot)src\SocketLibraryCPP\SocketLibraryCPP.vcxproj" />
   </ItemGroup>
 
-  <!-- PackageReference ONLY for NuGet configs -->
-  <ItemGroup Condition="'$(Configuration)'=='NuGet'">
-    <PackageReference Include="SocketLibraryCPP" Version="1.0.3" />
-  </ItemGroup>
+  <!-- Local headers+libs only when not using the package -->
+  <ItemDefinitionGroup Condition="'$(UseSocketLibFromNuGet)'!='true'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(RepoRoot)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(RepoRoot)lib\SocketLibraryCPP\$(Platform)\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>SocketLibraryCPP.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <PropertyGroup>
+    <TargetFramework>native</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(UseSocketLibFromNuGet)'!='true'">
+    <!-- Prevent NuGet targets from trying to resolve assets -->
+    <_SkipResolvePackageAssets>true</_SkipResolvePackageAssets>
+    <ResolveNuGetPackages>false</ResolveNuGetPackages>
+  </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

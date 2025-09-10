@@ -1,0 +1,73 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Users\\HM Engineering Dev\\source\\github_repos\\SocketLibraryCPP\\src\\UDPClientConsole\\UDPClientConsole.vcxproj": {}
+  },
+  "projects": {
+    "C:\\Users\\HM Engineering Dev\\source\\github_repos\\SocketLibraryCPP\\src\\UDPClientConsole\\UDPClientConsole.vcxproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\HM Engineering Dev\\source\\github_repos\\SocketLibraryCPP\\src\\UDPClientConsole\\UDPClientConsole.vcxproj",
+        "projectName": "UDPClientConsole",
+        "projectPath": "C:\\Users\\HM Engineering Dev\\source\\github_repos\\SocketLibraryCPP\\src\\UDPClientConsole\\UDPClientConsole.vcxproj",
+        "packagesPath": "C:\\Users\\HM Engineering Dev\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\HM Engineering Dev\\source\\github_repos\\SocketLibraryCPP\\src\\UDPClientConsole\\obj\\",
+        "projectStyle": "PackageReference",
+        "UsingMicrosoftNETSdk": false,
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\HM Engineering Dev\\source\\github_repos\\SocketLibraryCPP\\NuGet.Config",
+          "C:\\Users\\HM Engineering Dev\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "native"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "C:\\Users\\HM Engineering Dev\\source\\github_repos\\SocketLibraryCPP\\build": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "native": {
+            "targetAlias": "native",
+            "projectReferences": {}
+          }
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "native": {
+          "targetAlias": "native",
+          "dependencies": {
+            "SocketLibraryCPP": {
+              "target": "Package",
+              "version": "[*, )"
+            }
+          }
+        }
+      },
+      "runtimes": {
+        "win": {
+          "#import": []
+        },
+        "win-arm64": {
+          "#import": []
+        },
+        "win-x64": {
+          "#import": []
+        },
+        "win-x86": {
+          "#import": []
+        }
+      }
+    }
+  }
+}

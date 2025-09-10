@@ -3,15 +3,16 @@
 
   <PropertyGroup Label="SocketLibraryCPP">
     <SocketLibraryCPP_PackageRoot>$(MSBuildThisFileDirectory)</SocketLibraryCPP_PackageRoot>
+
+    <!-- Consumer overridable names/paths -->
     <SocketLibraryCPP_LibName Condition="'$(SocketLibraryCPP_LibName)'==''">SocketLibraryCPP.lib</SocketLibraryCPP_LibName>
-    <SocketLibraryCPP_IncludeDir Condition="'$(SocketLibraryCPP_IncludeDir)'==''">
-      $(SocketLibraryCPP_PackageRoot)include
-    </SocketLibraryCPP_IncludeDir>
-    <!-- Default to the consumer's Configuration -->
+    <SocketLibraryCPP_IncludeDir Condition="'$(SocketLibraryCPP_IncludeDir)'==''">$(SocketLibraryCPP_PackageRoot)include</SocketLibraryCPP_IncludeDir>
+
+    <!-- Default the binary config to the consumer’s $(Configuration) -->
     <SocketLibraryCPP_BinaryConfig Condition="'$(SocketLibraryCPP_BinaryConfig)'==''">$(Configuration)</SocketLibraryCPP_BinaryConfig>
   </PropertyGroup>
 
-  <!-- If the exact config’s .lib exists, use it; otherwise fall back to Release -->
+  <!-- Compute LibDir, fall back to Release if exact match not present -->
   <Choose>
     <When Condition="Exists('$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_BinaryConfig)\$(SocketLibraryCPP_LibName)')">
       <PropertyGroup>
