@@ -7,8 +7,10 @@
 
 #define NOMINMAX
 #define UDPSOCKET
-#include <Windows.h>
 #include "SocketLibrary.h"
+#include <Windows.h>
+
+
 
 void OnRead(unsigned char* message, int byteCount);
 void UpdateHandler(std::string message);
