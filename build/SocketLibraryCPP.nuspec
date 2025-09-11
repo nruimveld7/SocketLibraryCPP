@@ -2,7 +2,7 @@
 <package>
   <metadata>
     <id>SocketLibraryCPP</id>
-    <version>1.0.5</version>
+    <version>1.0.7</version>
     <authors>Noah Ruimveld</authors>
     <owners>Noah Ruimveld</owners>
     <description>Windows static socket library.</description>
