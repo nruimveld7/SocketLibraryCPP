@@ -7,6 +7,7 @@
 
 #define NOMINMAX
 #define UDPSOCKET
+#include <Windows.h>
 #include "SocketLibrary.h"
 
 void OnRead(unsigned char* message, int byteCount);
