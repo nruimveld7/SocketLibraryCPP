@@ -4,7 +4,7 @@
   <PropertyGroup Label="SocketLibraryCPP">
     <SocketLibraryCPP_PackageRoot>$(MSBuildThisFileDirectory)</SocketLibraryCPP_PackageRoot>
 
-    <!-- Consumer overridable names/paths -->
+    <!-- Consumer-overridable -->
     <SocketLibraryCPP_LibName Condition="'$(SocketLibraryCPP_LibName)'==''">SocketLibraryCPP.lib</SocketLibraryCPP_LibName>
     <SocketLibraryCPP_IncludeDir Condition="'$(SocketLibraryCPP_IncludeDir)'==''">$(SocketLibraryCPP_PackageRoot)include</SocketLibraryCPP_IncludeDir>
 
@@ -25,5 +25,24 @@
       </PropertyGroup>
     </Otherwise>
   </Choose>
+
+  <!-- Help IntelliSense find headers via legacy/IDE path lookups -->
+  <PropertyGroup>
+    <IncludePath>$(SocketLibraryCPP_IncludeDir);$(IncludePath)</IncludePath>
+  </PropertyGroup>
+
+  <!-- Feed include/lib dirs to both the compiler and IntelliSense -->
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ClInclude>
+      <AdditionalIncludeDirectories>$(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClInclude>
+    <Link>
+      <AdditionalLibraryDirectories>$(SocketLibraryCPP_LibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(SocketLibraryCPP_LibName);Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
 
 </Project>
