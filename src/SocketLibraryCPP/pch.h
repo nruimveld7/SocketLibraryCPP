@@ -9,8 +9,9 @@
 // Guarantees correct winsock include order
 #include "SocketLibrary/WinSock2First.h"
 
-// Pull Win32 only if your .cpps use it broadly (FormatMessage, HANDLE, etc.)
+// Pull windows.h and process.h becuase .cpps use them broadly
 #include <windows.h>
+#include <process.h>
 
 // Common STL used across many .cpps (add/remove to taste)
 #include <cstdint>
@@ -23,6 +24,9 @@
 #include <shared_mutex>
 #include <atomic>
 #include <stdexcept>
+#include <thread>
+#include <chrono>
+#include <limits>
 #include <utility>
 #include <sstream>
 #include <cstdlib>
