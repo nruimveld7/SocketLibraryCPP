@@ -470,8 +470,6 @@ void TCPServerSocket::MessageHandler(SOCKET clientSocket) {
 	}
 }
 
-
-
 int TCPServerSocket::SendAll(SOCKET socket, const char* buffer, int bufferSize) {
   int totalSent = 0;
   while(totalSent < bufferSize) {
