@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="UDPServerConsole.cpp">
+    <ClCompile Include="UDPClientConsole.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

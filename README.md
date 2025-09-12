@@ -84,7 +84,7 @@ A minimal nuspec metadata block looks like:
 ```xml
 <metadata>
   <id>SocketLibraryCPP</id>
-  <version>0.1.0</version>
+  <version>1.0.3</version>
   <authors>Noah Ruimveld</authors>
   <description>Windows static socket library with MSBuild integration via props/targets.</description>
   <license type="file">LICENSE</license>

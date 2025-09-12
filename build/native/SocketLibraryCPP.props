@@ -1,15 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
   <PropertyGroup Label="SocketLibraryCPP">
-    <SocketLibraryCPP_IncludeDir Condition="'$(SocketLibraryCPP_IncludeDir)' == ''">
-      $(MSBuildThisFileDirectory)include
-    </SocketLibraryCPP_IncludeDir>
+    <SocketLibraryCPP_PackageRoot>$(MSBuildThisFileDirectory)</SocketLibraryCPP_PackageRoot>
+
+    <!-- Consumer-overridable -->
+    <SocketLibraryCPP_LibName Condition="'$(SocketLibraryCPP_LibName)'==''">SocketLibraryCPP.lib</SocketLibraryCPP_LibName>
+    <SocketLibraryCPP_IncludeDir Condition="'$(SocketLibraryCPP_IncludeDir)'==''">$(SocketLibraryCPP_PackageRoot)include</SocketLibraryCPP_IncludeDir>
+
+    <!-- Default the binary config to the consumer’s $(Configuration) -->
+    <SocketLibraryCPP_BinaryConfig Condition="'$(SocketLibraryCPP_BinaryConfig)'==''">$(Configuration)</SocketLibraryCPP_BinaryConfig>
   </PropertyGroup>
+
+  <!-- Compute LibDir, fall back to Release if exact match not present -->
+  <Choose>
+    <When Condition="Exists('$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_BinaryConfig)\$(SocketLibraryCPP_LibName)')">
+      <PropertyGroup>
+        <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_BinaryConfig)\</SocketLibraryCPP_LibDir>
+      </PropertyGroup>
+    </When>
+    <Otherwise>
+      <PropertyGroup>
+        <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\Release\</SocketLibraryCPP_LibDir>
+      </PropertyGroup>
+    </Otherwise>
+  </Choose>
+
+  <!-- Help IntelliSense find headers via legacy/IDE path lookups -->
+  <PropertyGroup>
+    <IncludePath>$(SocketLibraryCPP_IncludeDir);$(IncludePath)</IncludePath>
+  </PropertyGroup>
+
+  <!-- Feed include/lib dirs to both the compiler and IntelliSense -->
   <ItemDefinitionGroup>
     <ClCompile>
-      <AdditionalIncludeDirectories>
-        $(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)
-      </AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
+    <ClInclude>
+      <AdditionalIncludeDirectories>$(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClInclude>
+    <Link>
+      <AdditionalLibraryDirectories>$(SocketLibraryCPP_LibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>$(SocketLibraryCPP_LibName);Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
+
 </Project>

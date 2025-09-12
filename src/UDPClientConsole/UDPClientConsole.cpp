@@ -10,7 +10,9 @@
 #include "SocketLibrary.h"
 #include <Windows.h>
 
-void OnRead(unsigned char* message, int byteCount, sockaddr_in* sender);
+
+
+void OnRead(unsigned char* message, int byteCount);
 void UpdateHandler(std::string message);
 void ErrorHandler(std::string message);
 void PrintToConsole(const std::string& message);
@@ -36,7 +38,7 @@ int GetInt(
 HANDLE pipeRead = INVALID_HANDLE_VALUE;
 HANDLE pipeWrite = INVALID_HANDLE_VALUE;
 bool spawned = false;
-UDPServerSocket server;
+UDPClientSocket client;
 std::mutex managerLock;
 DWORD managerPid;
 
@@ -59,7 +61,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Between messages, enter '/m' or '/c' to modify or close the socket respectively." << std::endl << std::endl;
   }
   std::cout << "Ready To Communicate" << std::endl;
-  std::cout << "Enter '/n' to communicate with a new client" << std::endl;
+  std::cout << "Enter '/n' to communicate with a new server" << std::endl;
   std::cout << "Otherwise, begin typing the message to send" << std::endl;
   if(spawned) {
     std::thread monitor = std::thread(ManagerHandler);
@@ -79,7 +81,7 @@ int main(int argc, char* argv[]) {
   }
 }
 
-void OnRead(unsigned char* message, int byteCount, sockaddr_in* sender) {
+void OnRead(unsigned char* message, int byteCount) {
   if(message == nullptr) {
     PrintToConsole("Invalid Message");
     return;
@@ -151,7 +153,7 @@ bool CheckManager() {
 
 void InputHandler(std::string input) {
   if(input == "/n") {
-    std::cout << "Setting up communications with a new client:" << std::endl;
+    std::cout << "Setting up communications with a new server:" << std::endl;
     std::string targetIP = "";
     while(true) {
       targetIP = GetString("Enter the target IP address: ");
@@ -168,15 +170,15 @@ void InputHandler(std::string input) {
     }
     std::cout << "Enter the message to send: ";
     std::getline(std::cin, input);
-    server.Send(input.c_str(), static_cast<int>(input.size()), targetIP, targetPort);
+    client.Send(input.c_str(), static_cast<int>(input.size()), targetIP, targetPort);
   } else if(input == "/m" && !spawned) {
-    server.Close();
+    client.Close();
     Configure();
   } else if(input == "/c" && !spawned) {
-    server.Close();
+    client.Close();
   } else {
     std::cout << "Replying with: " << input << std::endl;
-    server.Send(input.c_str(), static_cast<int>(input.size()));
+    client.Send(input.c_str(), static_cast<int>(input.size()));
   }
 }
 
@@ -246,7 +248,7 @@ bool ManagerRequest() {
   std::string request = "";
   if(PipeRead(request)) {
     if(request == "Modify") {
-      server.Close();
+      client.Close();
       Configure();
     } else if(request == "Close") {
       return true;
@@ -256,26 +258,26 @@ bool ManagerRequest() {
 }
 
 void Configure() {
-  server.SetErrorHandler(ErrorHandler);
-  server.SetUpdateHandler(UpdateHandler);
-  server.SetOnRead(OnRead);
+  client.SetErrorHandler(ErrorHandler);
+  client.SetUpdateHandler(UpdateHandler);
+  client.SetOnRead(OnRead);
   while(true) {
     while(true) {
-      if(server.SetIP(GetConfig("GetIP"))) {
+      if(client.SetIP(GetConfig("GetIP"))) {
         break;
       }
     }
     while(true) {
-      if(server.SetPortNum(GetConfig("GetPort"))) {
+      if(client.SetPortNum(GetConfig("GetPort"))) {
         break;
       }
     }
     while(true) {
-      if(server.SetMessageLength(GetConfig("GetMsgLen"))) {
+      if(client.SetMessageLength(GetConfig("GetMsgLen"))) {
         break;
       }
     }
-    if(server.Open()) {
+    if(client.Open()) {
       break;
     }
   }
@@ -298,7 +300,7 @@ std::string trim(const std::string& str) {
 }
 
 void Close() {
-  server.Close();
+  client.Close();
   exit(0);
 }
 

@@ -37,6 +37,7 @@ artifacts/
 .nuget/
 build/*nupkg
 build/_pkgview/
+build/logs
 _pkgview/
 
 # CMake (if ever used)

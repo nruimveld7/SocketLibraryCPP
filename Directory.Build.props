@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- ===== Repo-wide paths & layout ===== -->
   <PropertyGroup>
+    <!-- Absolute repo root (with trailing slash) -->
     <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)'))</RepoRoot>
     <RepoRoot Condition="!HasTrailingSlash('$(RepoRoot)')">$(RepoRoot)\</RepoRoot>
+
+    <!-- Default to repo-style bin/int output for non-StaticLibrary vcxproj -->
     <UseRepoLayout Condition="'$(UseRepoLayout)'==''">true</UseRepoLayout>
   </PropertyGroup>
+
   <Choose>
     <When Condition="'$(UseRepoLayout)'=='true' and '$(MSBuildProjectExtension)'=='.vcxproj'">
       <PropertyGroup Condition="'$(ConfigurationType)'!='StaticLibrary'">
@@ -13,4 +19,10 @@
       </PropertyGroup>
     </When>
   </Choose>
+  
+  <PropertyGroup>
+    <!-- If SolutionDir isn't set (e.g., building a .vcxproj directly), default to repo root -->
+    <SolutionDir Condition="'$(SolutionDir)' == ''">$(MSBuildThisFileDirectory)</SolutionDir>
+  </PropertyGroup>
+
 </Project>
