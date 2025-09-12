@@ -22,8 +22,8 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{f7efb87f-0673-4831-9c5a-d4bf742481ff}</ProjectGuid>
-    <RootNamespace>UDPClientConsole</RootNamespace>
+    <ProjectGuid>{bfbbd59a-f3e9-4be7-a1c4-656de2668de2}</ProjectGuid>
+    <RootNamespace>TCPServerConsole</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -128,7 +128,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="UDPClientConsole.cpp" />
+    <ClCompile Include="TCPServerConsole.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
