@@ -1,33 +1,66 @@
 <?xml version="1.0"?>
-<package>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
   <metadata>
     <id>SocketLibraryCPP</id>
-    <version>1.1.0</version>
+    <version>1.1.2</version>
     <authors>Noah Ruimveld</authors>
     <owners>Noah Ruimveld</owners>
-    <description>Windows static socket library.</description>
+
+    <description>
+      A high-performance, Windows-only static C++ socket library built on WinSock2.
+      Provides TCP/UDP client &amp; server classes, simple async callbacks (onRead /
+      onClientDisconnect), and a “WinSock2-first” include guard to prevent winsock.h
+      conflicts. Ships as x86/x64 static .lib files with headers; no external runtime
+      dependencies.
+
+      • x86/x64 (Debug/Release) static libs
+      • Minimal deps (MSVC / WinSock2)
+      • Thread-safe connections &amp; callbacks
+    </description>
+
+    <readme>docs\README.md</readme>
+    <projectUrl>https://github.com/nruimveld7/SocketLibraryCPP</projectUrl>
+    <repository type="git" url="https://github.com/nruimveld7/SocketLibraryCPP.git" />
+
     <license type="file">LICENSE</license>
-    <readme>README.md</readme>
-    <repository type="git" url="https://github.com/nruin7/SocketLibraryCPP.git" />
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
-    <tags>native sockets winsock msvc staticlib</tags>
+
+    <icon>SocketLibraryCPP.png</icon>
+    <releaseNotes>
+      - 1.1.2: Update to NuGet package docs
+      - 1.1.1: API cleanup, better errors, string overloads
+    </releaseNotes>
+
+    <tags>
+      native
+      sockets
+      winsock2
+      tcp
+      udp
+      server
+      client
+      c++
+      msvc
+      staticlib
+      windows
+    </tags>
   </metadata>
+
   <files>
-    <!-- Headers staged inside the package under build/native/include -->
     <file src="include\**\*.*" target="build\native\include" />
-    <!-- MSBuild integration -->
-    <file src="build\native\SocketLibraryCPP.props" target="build\native\SocketLibraryCPP.props" />
+    <file src="build\native\SocketLibraryCPP.props"   target="build\native\SocketLibraryCPP.props" />
     <file src="build\native\SocketLibraryCPP.targets" target="build\native\SocketLibraryCPP.targets" />
-    <!-- x64 libs (and optional PDBs) -->
-    <file src="lib\SocketLibraryCPP\x64\Debug\SocketLibraryCPP.lib" target="build\native\lib\x64\Debug\" />
+
+    <file src="lib\SocketLibraryCPP\x64\Debug\SocketLibraryCPP.lib"   target="build\native\lib\x64\Debug\" />
     <file src="lib\SocketLibraryCPP\x64\Release\SocketLibraryCPP.lib" target="build\native\lib\x64\Release\" />
-    <file src="lib\SocketLibraryCPP\x64\**\*.pdb" target="build\native\lib\x64\" />
-    <!-- Win32 libs (and optional PDBs) -->
-    <file src="lib\SocketLibraryCPP\Win32\Debug\SocketLibraryCPP.lib" target="build\native\lib\Win32\Debug\" />
+    <file src="lib\SocketLibraryCPP\x64\**\*.pdb"                      target="build\native\lib\x64\" />
+
+    <file src="lib\SocketLibraryCPP\Win32\Debug\SocketLibraryCPP.lib"   target="build\native\lib\Win32\Debug\" />
     <file src="lib\SocketLibraryCPP\Win32\Release\SocketLibraryCPP.lib" target="build\native\lib\Win32\Release\" />
-    <file src="lib\SocketLibraryCPP\Win32\**\*.pdb" target="build\native\lib\Win32\" />
-    <!-- root docs -->
-    <file src="README.md" />
-    <file src="LICENSE" />
+    <file src="lib\SocketLibraryCPP\Win32\**\*.pdb"                      target="build\native\lib\Win32\" />
+
+    <file src="build/README.md" target="docs\README.md" />
+    <file src="build/LICENSE"   target="LICENSE" />
+    <file src="build\SocketLibraryCPP.png" target="SocketLibraryCPP.png" />
   </files>
 </package>
