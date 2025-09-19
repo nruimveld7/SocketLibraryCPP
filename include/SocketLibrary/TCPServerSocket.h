@@ -15,7 +15,7 @@ public:
 	TCPServerSocket();
 	~TCPServerSocket();
 	void SetOnClientDisconnect(std::function<void()> onClientDisconnect);
-	void SetOnRead(std::function<void(unsigned char* message, int byteCount, SOCKET* sender)> onRead);
+	void SetOnRead(std::function<void(unsigned char* message, int byteCount, SOCKET sender)> onRead);
 	int GetListenBacklog();
 	bool SetListenBacklog(int newSize);
 	bool SetListenBacklog(std::string newSize);
@@ -26,6 +26,8 @@ public:
 	bool Open();
 	bool Close();
 	std::vector<std::string> GetClientAddresses();
+  void SetNoDelay(bool enabled, bool applyToAll = false) noexcept;
+  void SetKeepAlive(bool enabled, DWORD timeMs = 30'000, DWORD intervalMs = 10'000, bool applyToAll = false) noexcept;
   void Broadcast(const void* bytes, size_t byteCount);
   int Send(const void* bytes, size_t byteCount, const std::string& targetAddress);
   int Send(const void* bytes, size_t byteCount); // requires exactly 1 connection
@@ -68,25 +70,33 @@ public:
   }
 
 private:
+  struct SocketOptions {
+    bool noDelay = true;
+    bool keepAlive = false;
+    DWORD keepAliveTimeMs = 30'000;
+    DWORD keepAliveIntervalMs = 10'000;
+  } m_socketOptions;
 	struct MessageHandlerParams {
 		TCPServerSocket* serverSocket;
 		SOCKET clientSocket;
 	};
+  [[nodiscard]] bool ReadyToAccept() const noexcept;
   static unsigned __stdcall StaticAcceptConnection(void* arg);
 	void AcceptConnection();
 	void RegisterClient(SOCKET socket);
+  bool ApplySocketOptions(SOCKET socket) noexcept;
   static unsigned __stdcall StaticMessageHandler(void* arg);
 	void MessageHandler(SOCKET acceptSocket);
   int SendAll(SOCKET s, const char* data, int total);
 	bool CloseClientSocket(SOCKET clientSocket);
 	void OnClientDisconnect();
-	void OnRead(unsigned char* message, int byteCount, SOCKET* sender);
+	void OnRead(unsigned char* message, int byteCount, SOCKET sender);
 	std::vector<SOCKET> m_connections;
 	mutable std::shared_mutex m_connectionsMutex;
 	int m_listenBacklog;
 	int m_maxConnections;
 	std::function<void()> m_onClientDisconnect;
-	std::shared_mutex m_onClientDisconnectMutex;
-	std::function<void(unsigned char* message, int byteCount, SOCKET* sender)> m_onRead;
-	std::shared_mutex m_onReadMutex;
+	std::mutex m_onClientDisconnectMutex;
+	std::function<void(unsigned char* message, int byteCount, SOCKET sender)> m_onRead;
+	std::mutex m_onReadMutex;
 };

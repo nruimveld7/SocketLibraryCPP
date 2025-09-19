@@ -6,14 +6,14 @@
 #ifndef NOMINMAX
 #  define NOMINMAX
 #endif
+
 // Guarantees correct winsock include order
 #include "SocketLibrary/WinSock2First.h"
 
-// Pull windows.h and process.h becuase .cpps use them broadly
+// Common STL used across many .cpps
 #include <windows.h>
 #include <process.h>
-
-// Common STL used across many .cpps (add/remove to taste)
+#include <mstcpip.h>
 #include <cstdint>
 #include <string>
 #include <string_view>
