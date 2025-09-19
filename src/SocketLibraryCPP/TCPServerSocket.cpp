@@ -641,7 +641,7 @@ bool TCPServerSocket::CloseClientSocket(SOCKET clientSocket) {
 void TCPServerSocket::OnClientDisconnect() {
   std::function<void()> callback;
   {
-    std::unique_lock lock(m_onClientDisconnectMutex);
+    std::shared_lock lock(m_onClientDisconnectMutex);
     callback = m_onClientDisconnect;
   }
 	if(callback) {
@@ -654,7 +654,7 @@ void TCPServerSocket::OnClientDisconnect() {
 void TCPServerSocket::OnRead(unsigned char* message, int byteCount, SOCKET sender) {
   std::function<void(unsigned char* message, int byteCount, SOCKET sender)> callback;
   {
-    std::unique_lock lock(m_onReadMutex);
+    std::shared_lock lock(m_onReadMutex);
     callback = m_onRead;
   }
 	if(callback) {

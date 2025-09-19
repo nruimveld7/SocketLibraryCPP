@@ -12,7 +12,13 @@ inline constexpr int INVALID_PORT = -1;
 class Socket {
 public:
 	Socket();
-	~Socket() noexcept;
+	virtual ~Socket() noexcept;
+  //Non-copyable: prevent accidental double-close / slicing.
+  Socket(const Socket&) = delete;
+  Socket& operator=(const Socket&) = delete;
+  //Movable: transfer ownership of the OS handle and state.
+  Socket(Socket&& other) noexcept;
+  Socket& operator=(Socket&& other) noexcept;
 	void SetErrorHandler(std::function<void(const std::string& errorMessage)> errorHandler);
 	void SetUpdateHandler(std::function<void(const std::string& updateMessage)> updateHandler);
   std::string GetName() const;
@@ -26,16 +32,17 @@ public:
 	bool SetMessageLength(int messageLength);
 	bool SetMessageLength(const std::string& messageLength);
   bool GetActive() const noexcept;
-	static bool CheckIP(const std::string& ip);
+	static bool CheckIP(const std::string& ip) noexcept;
   static bool CheckPort(int port) noexcept;
   static bool CheckPort(const std::string& port);
-	bool operator==(const Socket& other) const {
-		return this == &other;
-	}
-
-	bool operator!=(const Socket& other) const {
-		return !(*this == other);
-	}
+  bool operator==(const Socket& other) const noexcept {
+    const SOCKET thisSocket = m_thisSocket;
+    const SOCKET otherSocket = other.m_thisSocket;
+    return thisSocket != INVALID_SOCKET && otherSocket != INVALID_SOCKET && thisSocket == otherSocket;
+  }
+  bool operator!=(const Socket& other) const noexcept {
+    return !(*this == other);
+  }
 
 protected:
 	bool Initialize(int socketType);
@@ -51,8 +58,8 @@ protected:
   static std::string GetSocketAddress(const sockaddr_in& addr);
   static std::string GetSocketIP(SOCKET socket);
   static std::string GetSocketIP(const sockaddr_in& addr);
-  static int GetSocketPort(SOCKET socket);
-  static int GetSocketPort(const sockaddr_in& addr);
+  static int GetSocketPort(SOCKET socket) noexcept;
+  static int GetSocketPort(const sockaddr_in& addr) noexcept;
   static bool StringToInt(const std::string& convertToInt, int* outInt);
 	SOCKET m_thisSocket;
 	sockaddr_in m_service;
@@ -64,9 +71,9 @@ protected:
 	std::atomic<bool> m_active;
 	std::atomic<bool> m_configured;
 	std::atomic<bool> m_closeAttempt;
-	std::function<void(std::string errorMessage)> m_errorHandler;
+	std::function<void(const std::string& errorMessage)> m_errorHandler;
 	std::shared_mutex m_errorHandlerMutex;
-	std::function<void(std::string updateMessage)> m_updateHandler;
+	std::function<void(const std::string& updateMessage)> m_updateHandler;
 	std::shared_mutex m_updateHandlerMutex;
 	static int s_wsaRefCount;
 	static std::mutex s_wsaMutex;

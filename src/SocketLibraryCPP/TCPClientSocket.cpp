@@ -146,14 +146,6 @@ bool TCPClientSocket::MessageHandler() {
 				//Server disconnected
 				ErrorInterpreter("Error Checking Connection: ", true);
 				OnDisconnect();
-				/*
-				UpdateInterpreter("Forcibly Closing The Connection");
-				if(Close()) {
-					Open();
-				} else {
-					UpdateInterpreter("Failed To Forcibly Close The Connection");
-				}
-				*/
 			}
 		} else {
 			if(!m_closeAttempt) {
@@ -161,14 +153,6 @@ bool TCPClientSocket::MessageHandler() {
 				error = true;
 				ErrorInterpreter("Error Checking Connection: ", true);
 				OnDisconnect();
-				/*
-				UpdateInterpreter("Forcibly Closing The Connection");
-				if(Close()) {
-					Open();
-				} else {
-					UpdateInterpreter("Failed To Forcibly Close The Connection");
-				}
-				*/
 			}
 		}
 		if(error) {

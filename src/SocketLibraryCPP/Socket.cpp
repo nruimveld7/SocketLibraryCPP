@@ -25,15 +25,86 @@ Socket::Socket() : m_service() {
 }
 
 Socket::~Socket() noexcept {
+  {
+    std::unique_lock lock(m_errorHandlerMutex);
+    m_errorHandler = nullptr;
+  }
+  {
+    std::unique_lock lock(m_updateHandlerMutex);
+    m_updateHandler = nullptr;
+  }
 	UnregisterWSA();
-	{
-		std::unique_lock lock(m_errorHandlerMutex);
-		m_errorHandler = nullptr;
-	}
-	{
-		std::unique_lock lock(m_updateHandlerMutex);
-		m_updateHandler = nullptr;
-	}
+}
+
+Socket::Socket(Socket&& other) noexcept
+  : m_thisSocket(other.m_thisSocket),
+  m_service(other.m_service),
+  m_name(std::move(other.m_name)),
+  m_ip(std::move(other.m_ip)),
+  m_portNum(other.m_portNum),
+  m_messageLength(other.m_messageLength.load(std::memory_order_relaxed)),
+  m_wsaRegistered(other.m_wsaRegistered.load(std::memory_order_relaxed)),
+  m_active(other.m_active.load(std::memory_order_relaxed)),
+  m_configured(other.m_configured.load(std::memory_order_relaxed)),
+  m_closeAttempt(other.m_closeAttempt.load(std::memory_order_relaxed)) {
+  //Move callbacks under exclusive locks (deadlock-safe pair lock).
+  {
+    std::scoped_lock lock(m_errorHandlerMutex, other.m_errorHandlerMutex);
+    m_errorHandler = std::move(other.m_errorHandler);
+  }
+  {
+    std::scoped_lock lock(m_updateHandlerMutex, other.m_updateHandlerMutex);
+    m_updateHandler = std::move(other.m_updateHandler);
+  }
+  // Invalidate source.
+  other.m_thisSocket = INVALID_SOCKET;
+  other.m_wsaRegistered = false;
+  other.m_active = false;
+  other.m_configured = false;
+  other.m_closeAttempt = false;
+  other.m_portNum = INVALID_PORT;
+  other.m_name.clear();
+  other.m_ip.clear();
+  std::memset(&other.m_service, 0, sizeof(other.m_service));
+}
+
+Socket& Socket::operator=(Socket&& other) noexcept {
+  if(this != &other) {
+    // Release current resource (safe even if INVALID_SOCKET).
+    CloseSocketSafe(m_thisSocket, true);
+    //Move callbacks first (deadlock-safe pair lock).
+    {
+      std::scoped_lock lock(m_errorHandlerMutex, other.m_errorHandlerMutex);
+      m_errorHandler = std::move(other.m_errorHandler);
+    }
+    {
+      std::scoped_lock lock(m_updateHandlerMutex, other.m_updateHandlerMutex);
+      m_updateHandler = std::move(other.m_updateHandler);
+    }
+    //Steal scalar state.
+    m_service = other.m_service;
+    m_name = std::move(other.m_name);
+    m_ip = std::move(other.m_ip);
+    m_portNum = other.m_portNum;
+    m_messageLength = other.m_messageLength.load(std::memory_order_relaxed);
+    m_wsaRegistered = other.m_wsaRegistered.load(std::memory_order_relaxed);
+    m_active = other.m_active.load(std::memory_order_relaxed);
+    m_configured = other.m_configured.load(std::memory_order_relaxed);
+    m_closeAttempt = other.m_closeAttempt.load(std::memory_order_relaxed);
+    //Steal the handle last.
+    m_thisSocket = other.m_thisSocket;
+    //Invalidate source.
+    other.m_thisSocket = INVALID_SOCKET;
+    other.m_wsaRegistered = false;
+    other.m_active = false;
+    other.m_configured = false;
+    other.m_closeAttempt = false;
+    other.m_portNum = INVALID_PORT;
+    other.m_name.clear();
+    other.m_ip.clear();
+    std::memset(&other.m_service, 0, sizeof(other.m_service));
+  }
+  return *this;
 }
 
 void Socket::SetErrorHandler(std::function<void(const std::string& errorMessage)> errorHandler) {
@@ -62,38 +133,38 @@ std::string Socket::GetIP() const {
 bool Socket::SetIP(const std::string& ip) {
 	if(inet_pton(AF_INET, ip.c_str(), &m_service.sin_addr) == 1) {
 		m_ip = ip;
-		UpdateInterpreter("Successfully Set IP Address: " + ip);
+		UpdateInterpreter("Successfully set IP address: " + ip);
 		return true;
 	}
-	ErrorInterpreter("Error Changing IP Address: ", true);
+	ErrorInterpreter("Error changing IP address: ", true);
 	return false;
 }
 
-int Socket::GetPortNum() const {
+int Socket::GetPortNum() const noexcept {
 	return m_portNum;
 }
 
 bool Socket::SetPortNum(int portNum) {
 	if(portNum > 0 && portNum <= 65535) {
 		m_portNum = portNum;
-		UpdateInterpreter("Successfully Set Port Number: " + std::to_string(portNum));
+		UpdateInterpreter("Successfully set port number: " + std::to_string(portNum));
 		return true;
 	}
-	ErrorInterpreter("Error: Port Number Attempt '" + std::to_string(portNum) + "' Is Not Valid (Must Be A Number: 1-65535)", false);
+	ErrorInterpreter("Error: Port number attempt '" + std::to_string(portNum) + "' is not valid (must be a number: 1-65535)", false);
 	return false;
 }
 
 bool Socket::SetPortNum(const std::string& portNum) {
 	int portAttempt = 0;
 	if(!StringToInt(portNum, &portAttempt)) {
-		ErrorInterpreter("Error Parsing Port Value From '" + portNum + "'", false);
+		ErrorInterpreter("Error parsing port value from '" + portNum + "'", false);
 		return false;
 	}
 	return SetPortNum(portAttempt);
 }
 
-int Socket::GetMessageLength() const {
-	return m_messageLength;
+int Socket::GetMessageLength() const noexcept {
+  return m_messageLength.load(std::memory_order_acquire);
 }
 
 bool Socket::SetMessageLength(int messageLength) {
@@ -101,14 +172,14 @@ bool Socket::SetMessageLength(int messageLength) {
 		m_messageLength = messageLength;
 		return true;
 	}
-	ErrorInterpreter("Error: Message Length Attempt '" + std::to_string(messageLength) + "' Is Not Valid (Must Be A Number > 0)", false);
+	ErrorInterpreter("Error: Message length attempt '" + std::to_string(messageLength) + "' is not valid (must be a number > 0)", false);
 	return false;
 }
 
 bool Socket::SetMessageLength(const std::string& messageLength) {
 	int msgLenAttempt = 0;
 	if(!StringToInt(messageLength, &msgLenAttempt)) {
-		ErrorInterpreter("Error Parsing Message Length Value From '" + messageLength + "'", false);
+		ErrorInterpreter("Error parsing message length value from '" + messageLength + "'", false);
 		return false;
 	}
 	return SetMessageLength(msgLenAttempt);
@@ -118,7 +189,7 @@ bool Socket::GetActive() const noexcept {
 	return m_active.load(std::memory_order_acquire);
 }
 
-bool Socket::CheckIP(const std::string& ip) {
+bool Socket::CheckIP(const std::string& ip) noexcept {
 	sockaddr_in temp;
 	if(inet_pton(AF_INET, ip.c_str(), &temp.sin_addr) == 1) {
 		return true;
@@ -126,7 +197,7 @@ bool Socket::CheckIP(const std::string& ip) {
 	return false;
 }
 
-bool Socket::CheckPort(int port) {
+bool Socket::CheckPort(int port) noexcept {
 	if(port > 0 && port <= 65535) {
 		return true;
 	}
@@ -150,7 +221,7 @@ bool Socket::CheckPort(const std::string& port) {
 
 bool Socket::Initialize(int socketType) {
 	if(!RegisterWSA()) {
-		ErrorInterpreter("Error Initializing Socket: Winsock dll Not Found", false);
+		ErrorInterpreter("Error initializing socket: Failed to register WSA", false);
 		return false;
 	}
 	std::string typeName = "";
@@ -163,81 +234,116 @@ bool Socket::Initialize(int socketType) {
 		protocol = IPPROTO_TCP;
 	}
 	if(typeName == "" || protocol == -1) {
-		ErrorInterpreter("Error Initializing Socket: Unrecognized Socket Type", false);
+		ErrorInterpreter("Error initializing socket: Unrecognized socket type", false);
 		return false;
 	}
-	UpdateInterpreter("Initializing " + typeName + " Socket " + m_ip + ":" + std::to_string(m_portNum));
+	UpdateInterpreter("Initializing " + typeName + " socket " + m_ip + ":" + std::to_string(m_portNum));
 	m_thisSocket = socket(AF_INET, socketType, protocol);
 	if(m_thisSocket == INVALID_SOCKET) {
-		ErrorInterpreter("Error Initializing Socket: ", true);
+		ErrorInterpreter("Error initializing socket: ", true);
 		UnregisterWSA();
 		return false;
 	}
 	m_service.sin_family = AF_INET;
 	if(inet_pton(AF_INET, m_ip.c_str(), &m_service.sin_addr) != 1) {
-		ErrorInterpreter("Error Initializing Socket: ", true);
+		ErrorInterpreter("Error initializing socket: ", true);
 		UnregisterWSA();
 		return false;
 	}
 	m_service.sin_port = htons(m_portNum);
-	UpdateInterpreter("Socket Initialized Successfully!");
+	UpdateInterpreter("Socket initialized successfully!");
 	return true;
 }
 
 bool Socket::RegisterWSA() {
-	std::lock_guard<std::mutex> lock(s_wsaMutex);
-	if(m_wsaRegistered) {
-		UpdateInterpreter("WSA Already Registered");
-		return true;
-	}
-	if(s_wsaRefCount == 0) {
-		WORD wVersionRequested = MAKEWORD(2, 2);
-		int error = WSAStartup(wVersionRequested, &s_wsaData);
-		if(error != 0) {
-			ErrorInterpreter("Error Finding Winsock dll: " + std::to_string(error), false);
-			return false;
-		}
-		UpdateInterpreter("Winsock dll Found");
-	} else {
-		UpdateInterpreter("Winsock dll Already Attached");
-	}
-	std::string msg = "Winsock Status: ";
-	msg += s_wsaData.szSystemStatus;
-	UpdateInterpreter(msg);
-	++s_wsaRefCount;
-	m_wsaRegistered.store(true, std::memory_order_release);
+  if(m_wsaRegistered.load(std::memory_order_acquire)) {
+    UpdateInterpreter("WSA already registered");
+    return true;
+  }
+  bool failed = false;
+  std::string msg;
+  {
+    std::scoped_lock lock(s_wsaMutex);
+    if(s_wsaRefCount == 0) {
+      WORD versionRequested = MAKEWORD(2, 2);
+      int error = ::WSAStartup(versionRequested, &s_wsaData);
+      if(error != 0) {
+        failed = true;
+        msg = "WSAStartup failed: " + std::to_string(error);
+      } else if(s_wsaData.wVersion != versionRequested) {
+        ::WSACleanup();
+        failed = true;
+        std::string requestedStr = std::to_string(LOBYTE(versionRequested)) + "." + std::to_string(HIBYTE(versionRequested));
+        std::string foundStr = std::to_string(LOBYTE(s_wsaData.wVersion)) + "." + std::to_string(HIBYTE(s_wsaData.wVersion));
+        msg = "Winsock version mismatch: Found " + foundStr + ", Required " + requestedStr;
+      } else {
+        msg = "WSA initialized";
+      }
+    } else {
+      msg = "WSA already initialized";
+    }
+    if(!failed) {
+      msg += " - Status: ";
+      msg += s_wsaData.szSystemStatus;
+      ++s_wsaRefCount;
+      m_wsaRegistered.store(true, std::memory_order_release);
+    }
+  }
+  if(failed) {
+    ErrorInterpreter(msg, false);
+    return false;
+  }
+  UpdateInterpreter(msg);
 	return true;
 }
 
 bool Socket::UnregisterWSA() {
 	CloseSocketSafe(m_thisSocket, true);
-	std::lock_guard<std::mutex> lock(s_wsaMutex);
-	if(!m_wsaRegistered.load(std::memory_order_acquire)) {
-		UpdateInterpreter("WSA Never Registered");
-		return true;
-	}
-	m_wsaRegistered.store(false, std::memory_order_release);
-	m_configured.store(false, std::memory_order_release);
-	m_active.store(false, std::memory_order_release);
-	if(s_wsaRefCount == 0) {
-		UpdateInterpreter("WSA Never Registered");
-		return true;
-	}
-	s_wsaRefCount--;
-	if(s_wsaRefCount == 0) {
-		UpdateInterpreter("Releasing Winsock dll");
-		int error = WSACleanup();
-		if(error != 0) {
-			ErrorInterpreter("Winsock dll Not Released - Error: ", true);
-			s_wsaRefCount++;
-			m_wsaRegistered.store(true, std::memory_order_release);
-			return false;
-		}
-		UpdateInterpreter("Winsock dll Released");
-		return true;
-	}
-	std::string msg = "WSA Unregistered, but still in use. Remaining count: " + std::to_string(s_wsaRefCount);
-	UpdateInterpreter(msg);
+  if(!m_wsaRegistered.load(std::memory_order_acquire)) {
+    UpdateInterpreter("WSA never registered for this socket");
+    return true;
+  }
+  bool failed = false;
+  std::string msg = "";
+  {
+    std::scoped_lock lock(s_wsaMutex);
+    if(!m_wsaRegistered.load(std::memory_order_relaxed)) {
+      msg = "WSA already unregistered for this socket";
+    } else {
+      m_wsaRegistered.store(false, std::memory_order_release);
+      m_configured.store(false, std::memory_order_release);
+      m_active.store(false, std::memory_order_release);
+      if(s_wsaRefCount > 0) {
+        --s_wsaRefCount;
+        if(s_wsaRefCount == 0) {
+          int error = ::WSACleanup();
+          if(error != 0) {
+            msg = "WSACleanup failed: ";
+            int code = WSAGetLastError();
+            msg += std::to_string(code);
+            msg += " - ";
+            msg += DecodeSocketError(code);
+            failed = true;
+            ++s_wsaRefCount;
+            m_wsaRegistered.store(true, std::memory_order_release);
+          } else {
+            msg = "WSA released sccessfully";
+          }
+        }
+      } else {
+        s_wsaRefCount = 0;
+        msg = "WSA refcount underflow";
+      }
+      if(msg.empty()) {
+        msg = "WSA unregistered for this socket. Registered sockets remaining: " + std::to_string(s_wsaRefCount);
+      }
+    }
+  }
+  if(failed) {
+    ErrorInterpreter(msg, false);
+    return false;
+  }
+  UpdateInterpreter(msg);
 	return true;
 }
 
@@ -247,11 +353,9 @@ bool Socket::CloseSocketSafe(SOCKET& socketToClose, bool shutDownSocket) {
 		return true;
 	}
 	if(shutDownSocket) {
-		if(!ShutDownSocket(socketToClose)) {
-			return false;
-		}
+    ShutDownSocket(socketToClose);
 	}
-	if(closesocket(socketToClose) == SOCKET_ERROR) {
+	if(::closesocket(socketToClose) == SOCKET_ERROR) {
 		ErrorInterpreter("Error Closing Socket: ", true);
 		return false;
 	}
@@ -261,7 +365,7 @@ bool Socket::CloseSocketSafe(SOCKET& socketToClose, bool shutDownSocket) {
 }
 
 bool Socket::ShutDownSocket(SOCKET& socketToShutDown) {
-	if(shutdown(socketToShutDown, SD_BOTH) == SOCKET_ERROR) {
+	if(::shutdown(socketToShutDown, SD_BOTH) == SOCKET_ERROR) {
 		ErrorInterpreter("Error Shutting Down Socket: ", true);
 		return false;
 	} else {
@@ -280,7 +384,7 @@ void Socket::ErrorInterpreter(const std::string& errorMessage, bool hasCode) {
 	}
   std::function<void(const std::string& errorMessage)> callback;
   {
-    std::unique_lock lock(m_errorHandlerMutex);
+    std::shared_lock lock(m_errorHandlerMutex);
     callback = m_errorHandler;
   }
   if(callback) {
@@ -291,7 +395,7 @@ void Socket::ErrorInterpreter(const std::string& errorMessage, bool hasCode) {
 void Socket::UpdateInterpreter(const std::string& updateMessage) {
   std::function<void(const std::string& updateMessage)> callback;
   {
-    std::unique_lock lock(m_updateHandlerMutex);
+    std::shared_lock lock(m_updateHandlerMutex);
     callback = m_updateHandler;
   }
   if(callback) {
@@ -367,7 +471,7 @@ std::string Socket::GetSocketIP(const sockaddr_in& addr) {
 	return std::string(ipStr);
 }
 
-int Socket::GetSocketPort(SOCKET socket) {
+int Socket::GetSocketPort(SOCKET socket) noexcept {
 	if(socket == INVALID_SOCKET) {
 		return INVALID_PORT;
 	}
@@ -379,7 +483,7 @@ int Socket::GetSocketPort(SOCKET socket) {
 	return GetSocketPort(addr);
 }
 
-int Socket::GetSocketPort(const sockaddr_in& addr) {
+int Socket::GetSocketPort(const sockaddr_in& addr) noexcept {
 	return ntohs(addr.sin_port);
 }
 

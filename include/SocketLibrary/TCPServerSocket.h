@@ -96,7 +96,7 @@ private:
 	int m_listenBacklog;
 	int m_maxConnections;
 	std::function<void()> m_onClientDisconnect;
-	std::mutex m_onClientDisconnectMutex;
+	std::shared_mutex m_onClientDisconnectMutex;
 	std::function<void(unsigned char* message, int byteCount, SOCKET sender)> m_onRead;
-	std::mutex m_onReadMutex;
+	std::shared_mutex m_onReadMutex;
 };
