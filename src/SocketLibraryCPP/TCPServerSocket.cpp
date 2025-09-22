@@ -10,8 +10,8 @@ TCPServerSocket::TCPServerSocket() {
 		std::unique_lock lock(m_onReadMutex);
 		m_onRead = nullptr;
 	}
-	m_listenBacklog = 1;
-	m_maxConnections = 2;
+	m_listenBacklog.store(1, std::memory_order_relaxed);
+	m_maxConnections.store(2, std::memory_order_relaxed);
 }
 
 TCPServerSocket::~TCPServerSocket() {
@@ -36,13 +36,13 @@ void TCPServerSocket::SetOnRead(std::function<void(unsigned char* message, int b
 	m_onRead = std::move(onRead);
 }
 
-int TCPServerSocket::GetListenBacklog() {
-	return m_listenBacklog;
+int TCPServerSocket::GetListenBacklog() const {
+	return m_listenBacklog.load(std::memory_order_relaxed);
 }
 
 bool TCPServerSocket::SetListenBacklog(int listenBacklog) {
 	if(listenBacklog > 0) {
-		m_listenBacklog = listenBacklog;
+		m_listenBacklog.store(listenBacklog, std::memory_order_relaxed);
 		UpdateInterpreter("Successfully Set Listen Backlog: " + std::to_string(listenBacklog));
 		return true;
 	}
@@ -50,7 +50,7 @@ bool TCPServerSocket::SetListenBacklog(int listenBacklog) {
 	return false;
 }
 
-bool TCPServerSocket::SetListenBacklog(std::string listenBacklog) {
+bool TCPServerSocket::SetListenBacklog(const std::string& listenBacklog) {
 	int listenBuffAttempt = 0;
 	if(!StringToInt(listenBacklog, &listenBuffAttempt)) {
 		ErrorInterpreter("Error Parsing Listen Backlog Value From '" + listenBacklog + "'", false);
@@ -59,24 +59,36 @@ bool TCPServerSocket::SetListenBacklog(std::string listenBacklog) {
 	return SetListenBacklog(listenBuffAttempt);
 }
 
-int TCPServerSocket::GetMaxConnections() {
-	return m_maxConnections;
+int TCPServerSocket::GetMaxConnections() const {
+	return m_maxConnections.load(std::memory_order_relaxed);
 }
 
 bool TCPServerSocket::SetMaxConnections(int maxConnections) {
 	if(maxConnections > 0) {
-		m_maxConnections = maxConnections;
-		UpdateInterpreter("Successfully Set Max Connections: " + std::to_string(maxConnections));
+		m_maxConnections.store(maxConnections, std::memory_order_relaxed);
+		UpdateInterpreter("Successfully set max connections: " + std::to_string(maxConnections));
+    {
+      std::unique_lock lock(m_connectionsMutex);
+      const size_t actualSize = m_connections.size();
+      const size_t desiredSize = static_cast<size_t>(maxConnections);
+      if(desiredSize > actualSize) {
+        m_connections.reserve(desiredSize);
+      }
+      const size_t minBuckets = static_cast<size_t>(std::ceil(actualSize / m_connections.max_load_factor()));
+      if(m_connections.bucket_count() > minBuckets * 2) {
+        m_connections.rehash(minBuckets);
+      }
+    }
 		return true;
 	}
-	ErrorInterpreter("Error: Max Connections Attempt '" + std::to_string(maxConnections) + "' Is Not Valid (Must Be A Number > 0)", false);
+	ErrorInterpreter("Error: Max connections attempt '" + std::to_string(maxConnections) + "' is not valid (must be a number > 0)", false);
 	return false;
 }
 
-bool TCPServerSocket::SetMaxConnections(std::string maxConnections) {
+bool TCPServerSocket::SetMaxConnections(const std::string& maxConnections) {
 	int maxConnAttempt = 0;
 	if(!StringToInt(maxConnections, &maxConnAttempt)) {
-		ErrorInterpreter("Error Parsing Max Connections Value From '" + maxConnections + "'", false);
+		ErrorInterpreter("Error parsing max connections value from '" + maxConnections + "'", false);
 		return false;
 
 	}
@@ -91,7 +103,7 @@ size_t TCPServerSocket::GetNumConnections() const {
 bool TCPServerSocket::Open() {
 	try {
 		if(!Initialize(SOCK_STREAM)) {
-			ErrorInterpreter("Error Initializing Socket", false);
+			ErrorInterpreter("Error initializing socket", false);
 			return false;
 		}
     int option = 1;
@@ -102,30 +114,31 @@ bool TCPServerSocket::Open() {
       reinterpret_cast<const char*>(&option),
       sizeof(option)
     )) {
-      ErrorInterpreter("Error Setting Exclusive Address: ", true);
+      ErrorInterpreter("Error setting exclusive address: ", true);
       UnregisterWSA();
       return false;
     }
-		UpdateInterpreter("Binding Socket");
+		UpdateInterpreter("Binding socket");
 		if(bind(m_thisSocket, (SOCKADDR*)&m_service, sizeof(m_service)) == SOCKET_ERROR) {
-			ErrorInterpreter("Socket Binding Error: ", true);
+			ErrorInterpreter("Socket binding error: ", true);
 			UnregisterWSA();
 			return false;
 		}
-		UpdateInterpreter("Binding Successful!");
-		UpdateInterpreter("Preparing To Listen For Connections");
-    if(listen(m_thisSocket, (m_listenBacklog > SOMAXCONN ? SOMAXCONN : m_listenBacklog)) == SOCKET_ERROR) {
-			ErrorInterpreter("Error Listening On Socket: ", true);
+		UpdateInterpreter("Binding successful!");
+		UpdateInterpreter("Preparing to listen for connections");
+    int listenBacklog = m_listenBacklog.load(std::memory_order_relaxed);
+    if(listen(m_thisSocket, (listenBacklog > SOMAXCONN ? SOMAXCONN : listenBacklog)) == SOCKET_ERROR) {
+			ErrorInterpreter("Error listening on socket: ", true);
 			UnregisterWSA();
 			return false;
 		}
 		m_configured.store(true, std::memory_order_release);
 		m_closeAttempt.store(false, std::memory_order_release);
-		UpdateInterpreter("Ready To Listen For Connections");
+		UpdateInterpreter("Ready to listen for connections");
     uintptr_t threadPtr = _beginthreadex(nullptr, 0, &TCPServerSocket::StaticAcceptConnection, this, 0, nullptr);
     HANDLE threadHandle = reinterpret_cast<HANDLE>(threadPtr);
 		if(threadHandle == nullptr) {
-			ErrorInterpreter("Thread Creation Error: ", true);
+			ErrorInterpreter("Thread creation error: ", true);
 			UnregisterWSA();
 			return false;
 		}
@@ -133,10 +146,10 @@ bool TCPServerSocket::Open() {
 		return true;
 	} catch(const std::exception& e) {
 		std::string error = e.what();
-		ErrorInterpreter("Open Error: " + error, false);
+		ErrorInterpreter("Open error: " + error, false);
 		throw;
 	} catch(...) {
-		ErrorInterpreter("Open: Unknown Error", false);
+		ErrorInterpreter("Open: Unknown error", false);
 		throw;
 	}
 	return false;
@@ -145,13 +158,13 @@ bool TCPServerSocket::Open() {
 bool TCPServerSocket::Close() {
   m_active.store(false, std::memory_order_release);
   m_closeAttempt.store(true, std::memory_order_release);
-  UpdateInterpreter("Closing Server Socket");
+  UpdateInterpreter("Closing server socket");
   if(!CloseSocketSafe(m_thisSocket, false)) {
-    UpdateInterpreter("Error Closing Server Socket");
+    UpdateInterpreter("Error closing server socket");
   } else {
-    UpdateInterpreter("Server Socket Closed");
+    UpdateInterpreter("Server socket closed");
   }
-  UpdateInterpreter("Closing All Connected Client Sockets");
+  UpdateInterpreter("Closing all connected client sockets");
   bool success = true;
   while(true) {
     SOCKET closeSocket = INVALID_SOCKET;
@@ -160,27 +173,30 @@ bool TCPServerSocket::Close() {
       if(m_connections.empty()) {
         break;
       }
-      closeSocket = m_connections.back();
-      m_connections.pop_back();
+      auto it = m_connections.begin();
+      closeSocket = (it != m_connections.end() ? *it : INVALID_SOCKET);
+      if(it != m_connections.end()) {
+        m_connections.erase(it);
+      }
     }
     if(closeSocket != INVALID_SOCKET) {
       if(CloseSocketSafe(closeSocket, true)) {
-        UpdateInterpreter("Client Socket Closed");
+        UpdateInterpreter("Client socket closed");
       } else {
         success = false;
-        ErrorInterpreter("Error Closing Client Socket", false);
+        ErrorInterpreter("Error closing client socket", false);
       }
     }
   }
   if(!success) {
-    ErrorInterpreter("Error Closing One Or More Connected Client Socket", false);
+    ErrorInterpreter("Error closing one or more connected client socket", false);
     return false;
   }
-  UpdateInterpreter("All Connected Client Sockets Closed");
+  UpdateInterpreter("All connected client sockets closed");
   return UnregisterWSA();
 }
 
-std::vector<std::string> TCPServerSocket::GetClientAddresses() {
+std::vector<std::string> TCPServerSocket::GetClientAddresses() const {
   std::shared_lock lock(m_connectionsMutex);
   std::vector<std::string> clientAddresses;
   clientAddresses.reserve(m_connections.size());
@@ -235,7 +251,7 @@ void TCPServerSocket::Broadcast(const void* bytes, size_t byteCount) {
     std::vector<SOCKET> connections;
     {
       std::shared_lock lock(m_connectionsMutex);
-      connections = m_connections;
+      connections.assign(m_connections.begin(), m_connections.end());
     }
     if(connections.empty()) {
       ErrorInterpreter("No connections to broadcast over", false);
@@ -272,10 +288,10 @@ void TCPServerSocket::Broadcast(const void* bytes, size_t byteCount) {
       ErrorInterpreter("Mismatch: fails + successes != connection count", false);
     }
   } catch(const std::exception& e) {
-    ErrorInterpreter(std::string("Broadcast Error: ") + e.what(), false);
+    ErrorInterpreter(std::string("Broadcast error: ") + e.what(), false);
     throw;
   } catch(...) {
-    ErrorInterpreter("Broadcast: Unknown Error", false);
+    ErrorInterpreter("Broadcast: Unknown error", false);
     throw;
   }
 }
@@ -343,7 +359,7 @@ int TCPServerSocket::Send(const void* bytes, size_t byteCount) {
     {
       std::shared_lock lock(m_connectionsMutex);
       if(m_connections.size() == 1) {
-        target = m_connections.front();
+        target = *m_connections.begin();
       }
     }
     if(target == INVALID_SOCKET) {
@@ -414,9 +430,9 @@ unsigned __stdcall TCPServerSocket::StaticAcceptConnection(void* arg) {
 void TCPServerSocket::AcceptConnection() {
 	try {
 		m_active.store(true, std::memory_order_release);
-		UpdateInterpreter("Accepting Socket Connections");
+		UpdateInterpreter("Accepting socket connections");
     if(!ReadyToAccept()) {
-			ErrorInterpreter("Server Socket Not Initialized", false);
+			ErrorInterpreter("Server socket not initialized", false);
 			return;
 		}
     while(ReadyToAccept()) {
@@ -425,20 +441,20 @@ void TCPServerSocket::AcceptConnection() {
         if(m_closeAttempt.load(std::memory_order_acquire) || !m_active.load(std::memory_order_acquire)) {
           return;
         }
-        ErrorInterpreter("Error Accepting Connection: ", true);
+        ErrorInterpreter("Error accepting connection: ", true);
         continue;
       }
       RegisterClient(acceptSocket);
 		}
     if(m_active.load(std::memory_order_acquire) && !m_closeAttempt.load(std::memory_order_acquire)) {
-      ErrorInterpreter("Error Accepting Connections: Server Socket Not Initialized", false);
+      ErrorInterpreter("Error accepting connections: Server socket not initialized", false);
     }
 	} catch(const std::exception& e) {
 		std::string error = e.what();
-		ErrorInterpreter("Accept Error: " + error, false);
+		ErrorInterpreter("Accept error: " + error, false);
 		throw;
 	} catch(...) {
-		ErrorInterpreter("Accept: Unknown Error", false);
+		ErrorInterpreter("Accept: Unknown error", false);
 		throw;
 	}
 }
@@ -450,21 +466,37 @@ void TCPServerSocket::RegisterClient(SOCKET client) {
       CloseSocketSafe(client, true);
       return;
     }
-    size_t connectionCount;
+    size_t connectionCount = 0;
+    bool reject = false;
+    bool duplicate = false;
+    const int maxConnections = m_maxConnections.load(std::memory_order_relaxed);
     {
       std::unique_lock lock(m_connectionsMutex);
-      if(m_connections.size() >= static_cast<size_t>(m_maxConnections)) {
-        UpdateInterpreter("Reached Max Concurrent Connections - Rejecting New Client");
-        CloseSocketSafe(client, true);
-        return;
+      if(m_connections.size() >= static_cast<size_t>(maxConnections)) {
+        reject = true;
+      } else {
+        auto [it, inserted] = m_connections.insert(client);
+        if(!inserted) {
+          duplicate = true;
+        } else {
+          connectionCount = m_connections.size();
+        }
       }
-      m_connections.push_back(client);
-      connectionCount = m_connections.size();
+    }
+    if(reject || duplicate) {
+      if(reject) {
+        UpdateInterpreter("Reached max concurrent connections - Rejecting new client");
+      }
+      if(duplicate) {
+        UpdateInterpreter("Duplicate client socket detected - Rejecting new client");
+      }
+      CloseSocketSafe(client, true);
+      return;
     }
 		std::string clientAddress = GetSocketAddress(client);
-		std::string msg = "Accepted Connection (" + std::to_string(connectionCount) + " Of " + std::to_string(m_maxConnections) + "): ";
+		std::string msg = "Accepted connection (" + std::to_string(connectionCount) + " of " + std::to_string(maxConnections) + "): ";
 		if(clientAddress.empty()) {
-			msg += "Unknown Address";
+			msg += "Unknown address";
 		} else {
 			msg += clientAddress;
 		}
@@ -477,21 +509,18 @@ void TCPServerSocket::RegisterClient(SOCKET client) {
 		} else {
       {
         std::unique_lock lock(m_connectionsMutex);
-        auto it = std::find(m_connections.begin(), m_connections.end(), client);
-        if(it != m_connections.end()) {
-          m_connections.erase(it);
-        }
+        m_connections.erase(client);
       }
       CloseSocketSafe(client, true);
       delete params;
-			ErrorInterpreter("Thread Creation Error: ", true);
+			ErrorInterpreter("Thread creation error: ", true);
 		}
 	} catch(const std::exception& e) {
 		std::string error = e.what();
-		ErrorInterpreter("Register Error: " + error, false);
+		ErrorInterpreter("Register error: " + error, false);
 		throw;
 	} catch(...) {
-		ErrorInterpreter("Register: Unknown Error", false);
+		ErrorInterpreter("Register: Unknown error", false);
 		throw;
 	}
 }
@@ -570,19 +599,19 @@ void TCPServerSocket::MessageHandler(SOCKET clientSocket) {
       }
 			const int byteCount = ::recv(clientSocket, reinterpret_cast<char*>(buffer.data()), messageLength, 0);
 			if(byteCount > 0) {
-				UpdateInterpreter("Received " + std::to_string(byteCount) + " Bytes");
+				UpdateInterpreter("Received " + std::to_string(byteCount) + " bytes");
 				OnRead(buffer.data(), byteCount, clientSocket);
       } else {
         if(byteCount == 0) {
-          UpdateInterpreter("Connection Closed By Client");
+          UpdateInterpreter("Connection closed by client");
         } else {
-          ErrorInterpreter("Error Checking Connection: ", true);
+          ErrorInterpreter("Error checking connection: ", true);
         }
-        UpdateInterpreter("Disconnected Client Detected");
+        UpdateInterpreter("Disconnected client detected");
         if(CloseClientSocket(clientSocket)) {
-          UpdateInterpreter("Closed Disconnected Client Socket");
+          UpdateInterpreter("Closed cisconnected client socket");
         } else {
-          UpdateInterpreter("Failed To Close Disconnected Client Socket");
+          UpdateInterpreter("Failed to close disconnected client socket");
         }
         OnClientDisconnect();
         break;
@@ -590,10 +619,10 @@ void TCPServerSocket::MessageHandler(SOCKET clientSocket) {
 		}
 	} catch(const std::exception& e) {
 		std::string error = e.what();
-		ErrorInterpreter("Message Handler Error: " + error, false);
+		ErrorInterpreter("Message handler error: " + error, false);
 		throw;
 	} catch(...) {
-		ErrorInterpreter("Message Handler: Unknown Error", false);
+		ErrorInterpreter("Message handler: Unknown error", false);
 		throw;
 	}
 }
@@ -621,18 +650,22 @@ int TCPServerSocket::SendAll(SOCKET socket, const char* buffer, int bufferSize) 
 }
 
 bool TCPServerSocket::CloseClientSocket(SOCKET clientSocket) {
+  bool found = false;
   {
     std::unique_lock lock(m_connectionsMutex);
-    auto it = std::find(m_connections.begin(), m_connections.end(), clientSocket);
+    auto it = m_connections.find(clientSocket);
     if(it == m_connections.end()) {
       //Already removed; idempotent success
       return true;
     }
-    UpdateInterpreter("Found Client Socket In Connections List");
+    found = true;
     m_connections.erase(it);
   }
+  if(found) {
+    UpdateInterpreter("Found client socket in connections list");
+  }
   if(!CloseSocketSafe(clientSocket, true)) {
-    ErrorInterpreter("Unable To Close Client Socket", false);
+    ErrorInterpreter("Unable to close client socket", false);
     return false;
   }
   return true;
@@ -647,7 +680,7 @@ void TCPServerSocket::OnClientDisconnect() {
 	if(callback) {
 		callback();
 	} else {
-		UpdateInterpreter("Client Disconnected");
+		UpdateInterpreter("Client disconnected");
 	}
 }
 
@@ -660,9 +693,9 @@ void TCPServerSocket::OnRead(unsigned char* message, int byteCount, SOCKET sende
 	if(callback) {
 		callback(message, byteCount, sender);
 	} else {
-		std::string update = "Received Message";
+		std::string update = "Received message";
 		if(sender != INVALID_SOCKET) {
-      update += " From " + GetSocketAddress(sender);
+      update += " from " + GetSocketAddress(sender);
 		}
 		UpdateInterpreter(update);
 	}

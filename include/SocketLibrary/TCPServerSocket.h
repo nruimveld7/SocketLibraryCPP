@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 #include <shared_mutex>
+#include <unordered_set>
 #include <mutex>
 #include <exception>
 #include <type_traits>
@@ -16,16 +17,16 @@ public:
 	~TCPServerSocket();
 	void SetOnClientDisconnect(std::function<void()> onClientDisconnect);
 	void SetOnRead(std::function<void(unsigned char* message, int byteCount, SOCKET sender)> onRead);
-	int GetListenBacklog();
+	int GetListenBacklog() const;
 	bool SetListenBacklog(int newSize);
-	bool SetListenBacklog(std::string newSize);
-	int GetMaxConnections();
+	bool SetListenBacklog(const std::string& newSize);
+	int GetMaxConnections() const;
 	bool SetMaxConnections(int newMax);
-	bool SetMaxConnections(std::string newMax);
+	bool SetMaxConnections(const std::string& newMax);
 	size_t GetNumConnections() const;
 	bool Open();
 	bool Close();
-	std::vector<std::string> GetClientAddresses();
+	std::vector<std::string> GetClientAddresses() const;
   void SetNoDelay(bool enabled, bool applyToAll = false) noexcept;
   void SetKeepAlive(bool enabled, DWORD timeMs = 30'000, DWORD intervalMs = 10'000, bool applyToAll = false) noexcept;
   void Broadcast(const void* bytes, size_t byteCount);
@@ -80,7 +81,7 @@ private:
 		TCPServerSocket* serverSocket;
 		SOCKET clientSocket;
 	};
-  [[nodiscard]] bool ReadyToAccept() const noexcept;
+  bool ReadyToAccept() const noexcept;
   static unsigned __stdcall StaticAcceptConnection(void* arg);
 	void AcceptConnection();
 	void RegisterClient(SOCKET socket);
@@ -91,10 +92,10 @@ private:
 	bool CloseClientSocket(SOCKET clientSocket);
 	void OnClientDisconnect();
 	void OnRead(unsigned char* message, int byteCount, SOCKET sender);
-	std::vector<SOCKET> m_connections;
+	std::unordered_set<SOCKET> m_connections;
 	mutable std::shared_mutex m_connectionsMutex;
-	int m_listenBacklog;
-	int m_maxConnections;
+	std::atomic<int> m_listenBacklog;
+	std::atomic<int> m_maxConnections;
 	std::function<void()> m_onClientDisconnect;
 	std::shared_mutex m_onClientDisconnectMutex;
 	std::function<void(unsigned char* message, int byteCount, SOCKET sender)> m_onRead;
