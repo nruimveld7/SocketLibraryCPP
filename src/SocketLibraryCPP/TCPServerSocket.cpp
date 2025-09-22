@@ -66,19 +66,8 @@ int TCPServerSocket::GetMaxConnections() const {
 bool TCPServerSocket::SetMaxConnections(int maxConnections) {
 	if(maxConnections > 0) {
 		m_maxConnections.store(maxConnections, std::memory_order_relaxed);
+    UpdateConnectionBuckets(static_cast<size_t>(maxConnections));
 		UpdateInterpreter("Successfully set max connections: " + std::to_string(maxConnections));
-    {
-      std::unique_lock lock(m_connectionsMutex);
-      const size_t actualSize = m_connections.size();
-      const size_t desiredSize = static_cast<size_t>(maxConnections);
-      if(desiredSize > actualSize) {
-        m_connections.reserve(desiredSize);
-      }
-      const size_t minBuckets = static_cast<size_t>(std::ceil(actualSize / m_connections.max_load_factor()));
-      if(m_connections.bucket_count() > minBuckets * 2) {
-        m_connections.rehash(minBuckets);
-      }
-    }
 		return true;
 	}
 	ErrorInterpreter("Error: Max connections attempt '" + std::to_string(maxConnections) + "' is not valid (must be a number > 0)", false);
@@ -309,13 +298,15 @@ int TCPServerSocket::Send(const void* bytes, size_t byteCount, const std::string
     }
     UpdateInterpreter("BEGIN Send(bytes, targetAddress)");
     SOCKET target = INVALID_SOCKET;
+    std::vector<SOCKET> connections;
     {
       std::shared_lock lock(m_connectionsMutex);
-      for(SOCKET socket : m_connections) {
-        if(GetSocketAddress(socket) == targetAddress) {
-          target = socket;
-          break;
-        }
+      connections.assign(m_connections.begin(), m_connections.end());
+    }
+    for(SOCKET socket : connections) {
+      if(GetSocketAddress(socket) == targetAddress) {
+        target = socket;
+        break;
       }
     }
     if(target == INVALID_SOCKET) {
@@ -469,9 +460,10 @@ void TCPServerSocket::RegisterClient(SOCKET client) {
     size_t connectionCount = 0;
     bool reject = false;
     bool duplicate = false;
-    const int maxConnections = m_maxConnections.load(std::memory_order_relaxed);
+    int maxConnections = 0;
     {
       std::unique_lock lock(m_connectionsMutex);
+      maxConnections = m_maxConnections.load(std::memory_order_relaxed);
       if(m_connections.size() >= static_cast<size_t>(maxConnections)) {
         reject = true;
       } else {
@@ -578,6 +570,31 @@ bool TCPServerSocket::ApplySocketOptions(SOCKET socket) noexcept {
   return success;
 }
 
+void TCPServerSocket::UpdateConnectionBuckets(size_t desiredSize) {
+  try {
+    std::unique_lock lock(m_connectionsMutex);
+    const size_t actualSize = m_connections.size();
+    if(desiredSize > actualSize) {
+      m_connections.reserve(desiredSize);
+    }
+    if(actualSize == 0) {
+      m_connections.rehash(0);
+      return;
+    }
+    const double maxLoadFactor = static_cast<double>(m_connections.max_load_factor());
+    const size_t minBuckets = static_cast<size_t>(std::ceil(static_cast<double>(actualSize) / maxLoadFactor));
+    constexpr size_t maxBuckets = std::numeric_limits<size_t>::max();
+    const size_t shrinkTrigger = (minBuckets > (maxBuckets >> 1) ? maxBuckets : (minBuckets << 1));
+    if(m_connections.bucket_count() > shrinkTrigger) {
+      m_connections.rehash(minBuckets);
+    }
+  } catch(const std::bad_alloc&) {
+    ErrorInterpreter("UpdateConnectionBuckets: Memory allocation failure", false);
+  } catch(...) {
+    ErrorInterpreter("UpdateConnectionBuckets: Unknown error", false);
+  }
+}
+
 unsigned __stdcall TCPServerSocket::StaticMessageHandler(void* arg) {
   auto* params = static_cast<MessageHandlerParams*>(arg);
   if(params) {
@@ -609,7 +626,7 @@ void TCPServerSocket::MessageHandler(SOCKET clientSocket) {
         }
         UpdateInterpreter("Disconnected client detected");
         if(CloseClientSocket(clientSocket)) {
-          UpdateInterpreter("Closed cisconnected client socket");
+          UpdateInterpreter("Closed disconnected client socket");
         } else {
           UpdateInterpreter("Failed to close disconnected client socket");
         }

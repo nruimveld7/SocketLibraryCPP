@@ -6,6 +6,9 @@
 #include <functional>
 #include <shared_mutex>
 #include <unordered_set>
+#include <cmath>
+#include <limits>
+#include <atomic>
 #include <mutex>
 #include <exception>
 #include <type_traits>
@@ -86,6 +89,7 @@ private:
 	void AcceptConnection();
 	void RegisterClient(SOCKET socket);
   bool ApplySocketOptions(SOCKET socket) noexcept;
+  void UpdateConnectionBuckets(size_t desiredSize);
   static unsigned __stdcall StaticMessageHandler(void* arg);
 	void MessageHandler(SOCKET acceptSocket);
   int SendAll(SOCKET s, const char* data, int total);
