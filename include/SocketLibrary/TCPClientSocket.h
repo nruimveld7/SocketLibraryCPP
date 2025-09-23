@@ -5,42 +5,42 @@
 #include <functional>
 #include <shared_mutex>
 #include <atomic>
+#include <type_traits>
 #include "SocketLibrary/Socket.h"
 
 class TCPClientSocket : public Socket {
 public:
 	TCPClientSocket();
-	~TCPClientSocket();
+	~TCPClientSocket() noexcept override;
 	void SetOnDisconnect(std::function<void()> onDisconnect);
 	void SetOnRead(std::function<void(unsigned char* message, int byteCount)> onRead);
-	int GetConnectionDelay();
+	int GetConnectionDelay() const noexcept;
 	bool SetConnectionDelay(int newDelay);
-	bool SetConnectionDelay(std::string newDelay);
-	bool GetConnected();
-	bool GetConnecting();
+	bool SetConnectionDelay(const std::string& newDelay);
+	bool GetConnected() const noexcept;
+	bool GetConnecting() const noexcept;
 	bool Open();
 	bool Close();
+
 	template <typename T>
-	int Send(T* buffer, int buffLen) {
-		UpdateInterpreter("Sending Message: " + std::to_string(buffLen) + " Bytes");
-		if(m_configured && m_wsaRegistered && m_connected && m_thisSocket != INVALID_SOCKET) {
-			//Convert buffer to byte array
-			const char* sendBuff = reinterpret_cast<const char*>(buffer);
-			int byteCount = send(m_thisSocket, sendBuff, buffLen, 0);
-			if(byteCount <= 0) {
-				ErrorInterpreter("Error Sending Mesage: ", true);
-			}
-			return byteCount;
-		} else {
-			ErrorInterpreter("Socket Is Not Initialized", false);
-			return 0;
-		}
+	int Send(const T* buffer, size_t bufferSize) {
+    static_assert(!std::is_void_v<T>, "T cannot be void");
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
+    if(bufferSize > (std::numeric_limits<size_t>::max() / sizeof(T))) {
+      ErrorInterpreter("Send error: payload too large for WinSock", false);
+      return 0;
+    }
+    const size_t bytes = bufferSize * sizeof(T);
+    return Send(static_cast<const void*>(buffer), bytes);
 	}
 
 private:
-	static DWORD WINAPI StaticConnect(LPVOID lpParam);
+  bool ReadyToConnect() const noexcept;
+  static unsigned __stdcall StaticConnect(void* arg);
 	void Connect();
 	bool MessageHandler();
+  int Send(const void* bytes, size_t byteCount);
+  int SendAll(const char* buffer, int bufferSize);
 	void OnDisconnect();
 	void OnRead(unsigned char* message, int byteCount);
 	std::atomic<bool> m_connected;
