@@ -119,7 +119,7 @@ void Socket::SetUpdateHandler(std::function<void(const std::string& updateMessag
 	m_updateHandler = std::move(updateHandler);
 }
 
-std::string Socket::GetName() const {
+std::string Socket::GetName() const noexcept {
   return m_name;
 }
 
@@ -128,7 +128,7 @@ bool Socket::SetName(const std::string& name) {
   return true;
 }
 
-std::string Socket::GetIP() const {
+std::string Socket::GetIP() const noexcept {
 	return m_ip;
 }
 
@@ -152,7 +152,7 @@ bool Socket::SetPortNum(int portNum) {
 		UpdateInterpreter("Successfully set port number: " + std::to_string(portNum));
 		return true;
 	}
-	ErrorInterpreter("Error: Port number attempt '" + std::to_string(portNum) + "' is not valid (must be a number: 1-65535)", false);
+	ErrorInterpreter("Error: port number attempt '" + std::to_string(portNum) + "' is not valid (must be a number: 1-65535)", false);
 	return false;
 }
 
@@ -174,7 +174,7 @@ bool Socket::SetMessageLength(int messageLength) {
 		m_messageLength = messageLength;
 		return true;
 	}
-	ErrorInterpreter("Error: Message length attempt '" + std::to_string(messageLength) + "' is not valid (must be a number > 0)", false);
+	ErrorInterpreter("Error: message length attempt '" + std::to_string(messageLength) + "' is not valid (must be a number > 0)", false);
 	return false;
 }
 
@@ -223,7 +223,7 @@ bool Socket::CheckPort(const std::string& port) {
 
 bool Socket::Initialize(int socketType) {
 	if(!RegisterWSA()) {
-		ErrorInterpreter("Error initializing socket: Failed to register WSA", false);
+		ErrorInterpreter("Error initializing socket: failed to register WSA", false);
 		return false;
 	}
 	std::string typeName = "";
@@ -235,7 +235,7 @@ bool Socket::Initialize(int socketType) {
 		typeName = "TCP";
 		protocol = IPPROTO_TCP;
   } else {
-    ErrorInterpreter("Error initializing socket: Unrecognized socket type", false);
+    ErrorInterpreter("Error initializing socket: unrecognized socket type", false);
     UnregisterWSA();
     return false;
   }
@@ -277,7 +277,7 @@ bool Socket::RegisterWSA() {
         failed = true;
         std::string requestedStr = std::to_string(LOBYTE(versionRequested)) + "." + std::to_string(HIBYTE(versionRequested));
         std::string foundStr = std::to_string(LOBYTE(s_wsaData.wVersion)) + "." + std::to_string(HIBYTE(s_wsaData.wVersion));
-        msg = "Winsock version mismatch: Found " + foundStr + ", Required " + requestedStr;
+        msg = "Winsock version mismatch: found " + foundStr + ", required " + requestedStr;
       } else {
         msg = "WSA initialized";
       }
@@ -285,7 +285,7 @@ bool Socket::RegisterWSA() {
       msg = "WSA already initialized";
     }
     if(!failed) {
-      msg += " - Status: ";
+      msg += " - status: ";
       msg += s_wsaData.szSystemStatus;
       ++s_wsaRefCount;
       m_wsaRegistered.store(true, std::memory_order_release);
@@ -337,7 +337,7 @@ bool Socket::UnregisterWSA() {
         msg = "WSA refcount underflow";
       }
       if(msg.empty()) {
-        msg = "WSA unregistered for this socket. Registered sockets remaining: " + std::to_string(s_wsaRefCount);
+        msg = "WSA unregistered for this socket - registered sockets remaining: " + std::to_string(s_wsaRefCount);
       }
     }
   }
@@ -351,27 +351,27 @@ bool Socket::UnregisterWSA() {
 
 bool Socket::CloseSocketSafe(SOCKET& socketToClose, bool shutDownSocket) {
 	if(socketToClose == INVALID_SOCKET) {
-		UpdateInterpreter("Socket Already Closed");
+		UpdateInterpreter("Socket already closed");
 		return true;
 	}
 	if(shutDownSocket) {
     ShutDownSocket(socketToClose);
 	}
 	if(::closesocket(socketToClose) == SOCKET_ERROR) {
-		ErrorInterpreter("Error Closing Socket: ", true);
+		ErrorInterpreter("Error closing socket: ", true);
 		return false;
 	}
-	UpdateInterpreter("Closed Socket");
+	UpdateInterpreter("Closed socket");
 	socketToClose = INVALID_SOCKET;
 	return true;
 }
 
 bool Socket::ShutDownSocket(SOCKET& socketToShutDown) {
 	if(::shutdown(socketToShutDown, SD_BOTH) == SOCKET_ERROR) {
-		ErrorInterpreter("Error Shutting Down Socket: ", true);
+		ErrorInterpreter("Error shutting down socket: ", true);
 		return false;
 	} else {
-		UpdateInterpreter("Shut Down Socket");
+		UpdateInterpreter("Shut down socket");
 		return true;
 	}
 }

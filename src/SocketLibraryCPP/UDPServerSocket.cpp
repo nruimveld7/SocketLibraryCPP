@@ -26,21 +26,21 @@ void UDPServerSocket::SetOnRead(std::function<void(unsigned char* message, int b
 
 bool UDPServerSocket::Open() {
 	if(!Initialize(SOCK_DGRAM)) {
-		ErrorInterpreter("Error Initializing Socket", false);
+		ErrorInterpreter("Error initializing socket", false);
 		return false;
 	}
 	if(m_target.sin_family == AF_UNSPEC) {
 		m_target = m_service;
 	}
-	UpdateInterpreter("Binding Socket");
+	UpdateInterpreter("Binding socket");
 	if(bind(m_thisSocket, (SOCKADDR*)&m_service, sizeof(m_service)) == SOCKET_ERROR) {
-		ErrorInterpreter("Socket Binding Error: ", true);
+		ErrorInterpreter("Socket binding error: ", true);
 		UnregisterWSA();
 		return false;
 	}
-	UpdateInterpreter("Binding Successful!");
+	UpdateInterpreter("Binding successful!");
 	m_configured = true;
-	UpdateInterpreter("Preparing To Listen For Messages");
+	UpdateInterpreter("Preparing to listen for messages");
   uintptr_t threadPtr = _beginthreadex(nullptr, 0, &UDPServerSocket::StaticMessageHandler, this, 0, nullptr);
   HANDLE threadHandle = reinterpret_cast<HANDLE>(threadPtr);
   if(!threadHandle) {
@@ -49,22 +49,17 @@ bool UDPServerSocket::Open() {
     return false;
   }
   CloseHandle(threadHandle);
-	UpdateInterpreter("Ready To Send Messages");
+	UpdateInterpreter("Ready to send messages");
 	return true;
 }
 
 bool UDPServerSocket::Close() {
-	m_active = false;
-	UpdateInterpreter("Closing Server Socket");
-	if(!CloseSocketSafe(m_thisSocket, true)) {
-		UpdateInterpreter("Error Closing Server Socket");
-		return false;
-	}
-	UpdateInterpreter("Server Socket Closed");
-	if(!UnregisterWSA()) {
-		return false;
-	}
-	return true;
+	m_active.store(false, std::memory_order_release);
+	UpdateInterpreter("Closing server socket");
+  const bool socketClosed = CloseSocketSafe(m_thisSocket, false);
+  m_configured.store(false, std::memory_order_release);
+  const bool wsaUnregistered = UnregisterWSA();
+  return socketClosed && wsaUnregistered;
 }
 
 unsigned __stdcall UDPServerSocket::StaticMessageHandler(void* arg) {
@@ -90,7 +85,7 @@ void UDPServerSocket::MessageHandler() {
 		int byteCount = ::recvfrom(
 			m_thisSocket,
 			reinterpret_cast<char*>(buffer.data()),
-			m_messageLength,
+			messageLength,
 			0,
 			(sockaddr*)&clientAddr,
 			&addrLen
@@ -99,11 +94,11 @@ void UDPServerSocket::MessageHandler() {
 			break;
 		}
 		if(byteCount >= 0) {
-			UpdateInterpreter("Received " + std::to_string(byteCount) + " Bytes");
+			UpdateInterpreter("Received " + std::to_string(byteCount) + " bytes");
 			OnRead(buffer.data(), byteCount, clientAddr);
       continue;
 		}
-		ErrorInterpreter("Error Receiving Message: ", true);
+		ErrorInterpreter("Error receiving message: ", true);
 		break;
 	}
 }
@@ -208,7 +203,7 @@ int UDPServerSocket::SendAll(sockaddr_in socket, const char* buffer, int bufferS
 void UDPServerSocket::OnRead(unsigned char* message, int byteCount, sockaddr_in sender) {
   std::function<void(unsigned char* message, int byteCount, sockaddr_in sender)> callback;
   {
-    std::unique_lock lock(m_onReadMutex);
+    std::shared_lock lock(m_onReadMutex);
     callback = m_onRead;
   }
   if(!callback) {

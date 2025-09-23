@@ -6,6 +6,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <atomic>
+#include "SocketLibrary/WorkerGroup.h"
 
 inline constexpr int INVALID_PORT = -1;
 
@@ -21,9 +22,9 @@ public:
   Socket& operator=(Socket&& other) noexcept;
 	void SetErrorHandler(std::function<void(const std::string& errorMessage)> errorHandler);
 	void SetUpdateHandler(std::function<void(const std::string& updateMessage)> updateHandler);
-  std::string GetName() const;
+  std::string GetName() const noexcept;
   bool SetName(const std::string& name);
-  std::string GetIP() const;
+  std::string GetIP() const noexcept;
 	bool SetIP(const std::string& ip);
   int GetPortNum() const noexcept;
 	bool SetPortNum(int portNum);
@@ -69,6 +70,7 @@ protected:
   static constexpr bool IsMulticastIPv4(const in_addr& address) noexcept;
   static constexpr bool IsLimitedBroadcastIPv4(const in_addr& address) noexcept;
 	SOCKET m_thisSocket;
+  WorkerGroup m_workers;
 	sockaddr_in m_service;
   std::string m_name;
 	std::string m_ip;
@@ -86,4 +88,5 @@ protected:
 	static int s_wsaRefCount;
 	static std::mutex s_wsaMutex;
 	static WSADATA s_wsaData;
+
 };

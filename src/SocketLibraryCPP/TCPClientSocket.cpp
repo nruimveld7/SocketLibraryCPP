@@ -48,7 +48,7 @@ bool TCPClientSocket::SetConnectionDelay(int connectionDelay) {
 		UpdateInterpreter("Successfully set connection delay: " + std::to_string(connectionDelay));
 		return true;
 	} else {
-		ErrorInterpreter("Error: Connection delay attempt '" + std::to_string(connectionDelay) + "' is not valid (must be a number > 0)", false);
+		ErrorInterpreter("Error: connection delay attempt '" + std::to_string(connectionDelay) + "' is not valid (must be a number > 0)", false);
 		return false;
 	}
 }
