@@ -174,7 +174,7 @@ int UDPServerSocket::SendAll(sockaddr_in socket, const char* buffer, int bufferS
     );
     if(sentBytes == SOCKET_ERROR) {
       const int err = WSAGetLastError();
-      if(err == WSAEWOULDBLOCK || err == WSAEINTR) {
+      if(err == WSAEINTR) {
         //Brief backoff
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         continue;

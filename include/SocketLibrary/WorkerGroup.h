@@ -19,7 +19,7 @@ public:
     unsigned* outID = nullptr) noexcept;
   void StopWorkers() noexcept;
   bool StopRequested() const noexcept;
-  bool WaitForWorkers(DWORD timeoutMsPerChunk) noexcept;
+  bool WaitForWorkers() noexcept;
   int ActiveWorkerCount() const noexcept;
 
 private:

@@ -6,7 +6,7 @@
 
 WorkerGroup::~WorkerGroup() noexcept {
   StopWorkers();
-  (void)WaitForWorkers(200);
+  (void)WaitForWorkers();
 }
 
 bool WorkerGroup::StartWorker(
@@ -57,17 +57,15 @@ bool WorkerGroup::StopRequested() const noexcept {
   return m_stop.load(std::memory_order_acquire);
 }
 
-bool WorkerGroup::WaitForWorkers(DWORD timeoutMsPerChunk) noexcept {
+bool WorkerGroup::WaitForWorkers() noexcept {
   std::vector<HANDLE> workers;
   {
     std::lock_guard lock(m_workersMutex);
     workers = std::move(m_workers);
-    m_workers.clear();
   }
   if(workers.empty()) {
     return true;
   }
-  bool allExited = true;
   size_t index = 0;
   while(true) {
     const size_t totalWorkers = workers.size();
@@ -81,17 +79,24 @@ bool WorkerGroup::WaitForWorkers(DWORD timeoutMsPerChunk) noexcept {
       static_cast<DWORD>(chunkCount),
       workers.data() + index,
       TRUE, // wait for all in this chunk
-      timeoutMsPerChunk
+      INFINITE
     );
-    if(result != WAIT_OBJECT_0) {
-      allExited = false; // timed out or failed
+    if(result == WAIT_FAILED) {
+      for(size_t i = 0; i < chunkCount; ++i) {
+        HANDLE worker = workers[index + i];
+        if(worker) {
+          ::WaitForSingleObject(worker, INFINITE);
+        }
+      }
     }
     index += chunkCount;
   }
   for(HANDLE worker : workers) {
-    ::CloseHandle(worker);
+    if(worker) {
+      ::CloseHandle(worker);
+    }
   }
-  return allExited && (m_activeWorkers.load(std::memory_order_acquire) == 0);
+  return m_activeWorkers.load(std::memory_order_acquire) == 0;
 }
 
 int WorkerGroup::ActiveWorkerCount() const noexcept {

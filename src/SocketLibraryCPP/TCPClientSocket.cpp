@@ -225,7 +225,7 @@ int TCPClientSocket::SendAll(const char* buffer, int bufferSize) {
     const int sentBytes = ::send(m_thisSocket, buffer + totalSent, bufferSize - totalSent, 0);
     if(sentBytes == SOCKET_ERROR) {
       const int err = WSAGetLastError();
-      if(err == WSAEWOULDBLOCK || err == WSAEINTR) {
+      if(err == WSAEINTR) {
         //Brief backoff
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         continue;

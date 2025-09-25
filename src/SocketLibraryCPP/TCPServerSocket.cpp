@@ -136,20 +136,15 @@ bool TCPServerSocket::Close() {
 }
 
 std::vector<std::string> TCPServerSocket::GetClientAddresses() const {
-  std::vector<SOCKET> connections;
+  std::vector<std::string> addresses;
   {
     std::shared_lock lock(m_connectionsMutex);
-    connections.assign(m_connections.begin(), m_connections.end());
-  }
-  std::vector<std::string> clientAddresses;
-  clientAddresses.reserve(connections.size());
-  for(SOCKET client : connections) {
-    std::string clientAddress = GetSocketAddress(client);
-    if(!clientAddress.empty()) {
-      clientAddresses.push_back(clientAddress);
+    addresses.reserve(m_socketToAddress.size());
+    for(const auto& [socket, address] : m_socketToAddress) {
+      addresses.push_back(address);
     }
   }
-  return clientAddresses;
+  return addresses;
 }
 
 void TCPServerSocket::SetNoDelay(bool enabled, bool applyToAll) noexcept {
@@ -237,6 +232,7 @@ void TCPServerSocket::RegisterClient(SOCKET client) {
   bool reject = false;
   bool duplicate = false;
   int maxConnections = 0;
+  std::string clientAddress;
   {
     std::unique_lock lock(m_connectionsMutex);
     maxConnections = m_maxConnections.load(std::memory_order_relaxed);
@@ -247,6 +243,11 @@ void TCPServerSocket::RegisterClient(SOCKET client) {
       if(!inserted) {
         duplicate = true;
       } else {
+        clientAddress = GetSocketAddress(client);
+        if(!clientAddress.empty()) {
+          m_addressToSocket[clientAddress] = client;
+          m_socketToAddress[client] = clientAddress;
+        }
         connectionCount = m_connections.size();
       }
     }
@@ -261,7 +262,6 @@ void TCPServerSocket::RegisterClient(SOCKET client) {
     CloseSocketSafe(client, true);
     return;
   }
-	std::string clientAddress = GetSocketAddress(client);
 	std::string msg = "Accepted connection (" + std::to_string(connectionCount) + " of " + std::to_string(maxConnections) + "): ";
 	if(clientAddress.empty()) {
 		msg += "Unknown address";
@@ -346,9 +346,13 @@ void TCPServerSocket::UpdateConnectionBuckets(size_t desiredSize) {
     const size_t actualSize = m_connections.size();
     if(desiredSize > actualSize) {
       m_connections.reserve(desiredSize);
+      m_addressToSocket.reserve(desiredSize);
+      m_socketToAddress.reserve(desiredSize);
     }
     if(actualSize == 0) {
       m_connections.rehash(0);
+      m_addressToSocket.rehash(0);
+      m_socketToAddress.rehash(0);
       return;
     }
     const double maxLoadFactor = static_cast<double>(m_connections.max_load_factor());
@@ -357,6 +361,8 @@ void TCPServerSocket::UpdateConnectionBuckets(size_t desiredSize) {
     const size_t shrinkTrigger = (minBuckets > (maxBuckets >> 1) ? maxBuckets : (minBuckets << 1));
     if(m_connections.bucket_count() > shrinkTrigger) {
       m_connections.rehash(minBuckets);
+      m_addressToSocket.rehash(minBuckets);
+      m_socketToAddress.rehash(minBuckets);
     }
   } catch(const std::bad_alloc&) {
     ErrorInterpreter("UpdateConnectionBuckets: memory allocation failure", false);
@@ -461,15 +467,11 @@ int TCPServerSocket::Send(const void* bytes, size_t byteCount, const std::string
     return 0;
   }
   SOCKET target = INVALID_SOCKET;
-  std::vector<SOCKET> connections;
   {
     std::shared_lock lock(m_connectionsMutex);
-    connections.assign(m_connections.begin(), m_connections.end());
-  }
-  for(SOCKET socket : connections) {
-    if(GetSocketAddress(socket) == targetAddress) {
-      target = socket;
-      break;
+    auto it = m_addressToSocket.find(targetAddress);
+    if(it != m_addressToSocket.end()) {
+      target = it->second;
     }
   }
   if(target == INVALID_SOCKET) {
@@ -521,7 +523,7 @@ int TCPServerSocket::SendAll(SOCKET socket, const char* buffer, int bufferSize) 
     const int sentBytes = ::send(socket, buffer + totalSent, bufferSize - totalSent, 0);
     if(sentBytes == SOCKET_ERROR) {
       const int err = WSAGetLastError();
-      if(err == WSAEWOULDBLOCK || err == WSAEINTR) {
+      if(err == WSAEINTR) {
         //Brief backoff
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         continue;
@@ -547,7 +549,11 @@ bool TCPServerSocket::Cleanup() {
     connections.reserve(m_connections.size());
     connections.assign(m_connections.begin(), m_connections.end());
     m_connections.clear();
+    m_addressToSocket.clear();
+    m_socketToAddress.clear();
     m_connections.rehash(0);
+    m_addressToSocket.rehash(0);
+    m_socketToAddress.rehash(0);
   }
   for(SOCKET socket : connections) {
     if(socket != INVALID_SOCKET && !CloseSocketSafe(socket, true)) {
@@ -559,15 +565,22 @@ bool TCPServerSocket::Cleanup() {
 
 bool TCPServerSocket::CloseClientSocket(SOCKET clientSocket) {
   bool found = false;
+  std::string address;
   {
     std::unique_lock lock(m_connectionsMutex);
-    auto it = m_connections.find(clientSocket);
-    if(it == m_connections.end()) {
+    auto itConnection = m_connections.find(clientSocket);
+    if(itConnection == m_connections.end()) {
       //Already removed; idempotent success
       return true;
     }
     found = true;
-    m_connections.erase(it);
+    m_connections.erase(itConnection);
+    if(auto itAddress = m_socketToAddress.find(clientSocket); itAddress != m_socketToAddress.end()) {
+      address = std::move(itAddress->second);
+      if(!address.empty()) {
+        m_addressToSocket.erase(address);
+      }
+    }
   }
   if(found) {
     UpdateInterpreter("Found client socket in connections list");

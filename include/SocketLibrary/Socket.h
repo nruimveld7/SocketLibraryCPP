@@ -59,7 +59,7 @@ protected:
   ) noexcept;
   void StopWorkers() noexcept;
   bool StopRequested() const noexcept;
-  bool WaitForWorkers(DWORD timeoutMsPerChunk) noexcept;
+  bool WaitForWorkers() noexcept;
   int ActiveWorkerCount() const noexcept;
 	bool UnregisterWSA();
 	bool CloseSocketSafe(SOCKET& socketToClose, bool shutDownSocket);

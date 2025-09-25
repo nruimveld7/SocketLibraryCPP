@@ -7,7 +7,7 @@ WSADATA Socket::s_wsaData = {};
 
 Socket::~Socket() noexcept {
   m_workers.StopWorkers();
-  (void)m_workers.WaitForWorkers(200);
+  (void)m_workers.WaitForWorkers();
   {
     std::unique_lock lock(m_errorHandlerMutex);
     m_errorHandler = nullptr;
@@ -175,7 +175,7 @@ bool Socket::Close() {
   const bool socketClosed = Cleanup();
   SetConfigured(false);
   StopWorkers();
-  (void)WaitForWorkers(200);
+  (void)WaitForWorkers();
   const bool wsaUnregistered = UnregisterWSA();
   return socketClosed && wsaUnregistered;
 }
@@ -329,8 +329,8 @@ bool Socket::StopRequested() const noexcept {
   return m_workers.StopRequested();
 }
 
-bool Socket::WaitForWorkers(DWORD timeoutMsPerChunk) noexcept {
-  return m_workers.WaitForWorkers(timeoutMsPerChunk);
+bool Socket::WaitForWorkers() noexcept {
+  return m_workers.WaitForWorkers();
 }
 
 int Socket::ActiveWorkerCount() const noexcept {

@@ -6,6 +6,7 @@
 #include <functional>
 #include <shared_mutex>
 #include <unordered_set>
+#include <unordered_map>
 #include <cmath>
 #include <limits>
 #include <atomic>
@@ -132,6 +133,8 @@ private:
 	void OnClientDisconnect();
 	void OnRead(unsigned char* message, int byteCount, SOCKET sender);
 	std::unordered_set<SOCKET> m_connections;
+  std::unordered_map<std::string, SOCKET> m_addressToSocket;
+  std::unordered_map<SOCKET, std::string> m_socketToAddress;
 	mutable std::shared_mutex m_connectionsMutex;
 	std::atomic<int> m_listenBacklog;
 	std::atomic<int> m_maxConnections;
