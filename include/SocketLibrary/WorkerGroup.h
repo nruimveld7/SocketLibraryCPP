@@ -1,10 +1,9 @@
 #pragma once
 
+#include "WinSock2First.h"
 #include <mutex>
 #include <atomic>
 #include <vector>
-#define NOMINMAX
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 

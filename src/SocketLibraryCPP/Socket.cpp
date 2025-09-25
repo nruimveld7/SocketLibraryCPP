@@ -5,27 +5,9 @@ int Socket::s_wsaRefCount{0};
 std::mutex Socket::s_wsaMutex;
 WSADATA Socket::s_wsaData = {};
 
-Socket::Socket() : m_service() {
-	{
-		std::unique_lock lock(m_errorHandlerMutex);
-		m_errorHandler = nullptr;
-    m_errorHandlerFaulted.store(true, std::memory_order_release);
-	}
-	{
-		std::unique_lock lock(m_updateHandlerMutex);
-		m_updateHandler = nullptr;
-	}
-	m_thisSocket = INVALID_SOCKET;
-	m_ip = "127.0.0.1";
-	m_portNum = 55555;
-	m_wsaRegistered = false;
-	m_active = false;
-	m_configured = false;
-	m_messageLength = 1000;
-	m_closeAttempt = false;
-}
-
 Socket::~Socket() noexcept {
+  m_workers.StopWorkers();
+  (void)m_workers.WaitForWorkers(200);
   {
     std::unique_lock lock(m_errorHandlerMutex);
     m_errorHandler = nullptr;
@@ -187,8 +169,19 @@ bool Socket::SetMessageLength(const std::string& messageLength) {
 	return SetMessageLength(msgLenAttempt);
 }
 
+bool Socket::Close() {
+  SetActive(false);
+  SetClosing(true);
+  const bool socketClosed = Cleanup();
+  SetConfigured(false);
+  StopWorkers();
+  (void)WaitForWorkers(200);
+  const bool wsaUnregistered = UnregisterWSA();
+  return socketClosed && wsaUnregistered;
+}
+
 bool Socket::GetActive() const noexcept {
-	return m_active.load(std::memory_order_acquire);
+	return IsActive();
 }
 
 bool Socket::CheckIP(const std::string& ip) noexcept {
@@ -219,6 +212,26 @@ bool Socket::CheckPort(const std::string& port) {
 		return false;
 	}
 	return false;
+}
+
+Socket::Socket() : m_service() {
+  {
+    std::unique_lock lock(m_errorHandlerMutex);
+    m_errorHandler = nullptr;
+    m_errorHandlerFaulted.store(true, std::memory_order_release);
+  }
+  {
+    std::unique_lock lock(m_updateHandlerMutex);
+    m_updateHandler = nullptr;
+  }
+  m_thisSocket = INVALID_SOCKET;
+  m_ip = "127.0.0.1";
+  m_portNum = 55555;
+  SetRegistered(false);
+  SetActive(false);
+  SetConfigured(false);
+  SetClosing(false);
+  m_messageLength = 1000;
 }
 
 bool Socket::Initialize(int socketType) {
@@ -258,7 +271,7 @@ bool Socket::Initialize(int socketType) {
 }
 
 bool Socket::RegisterWSA() {
-  if(m_wsaRegistered.load(std::memory_order_acquire)) {
+  if(IsRegistered()) {
     UpdateInterpreter("WSA already registered");
     return true;
   }
@@ -288,7 +301,7 @@ bool Socket::RegisterWSA() {
       msg += " - status: ";
       msg += s_wsaData.szSystemStatus;
       ++s_wsaRefCount;
-      m_wsaRegistered.store(true, std::memory_order_release);
+      SetRegistered(true);
     }
   }
   if(failed) {
@@ -299,9 +312,34 @@ bool Socket::RegisterWSA() {
 	return true;
 }
 
+bool Socket::StartWorker(
+  unsigned(__stdcall* workerFunction)(void*),
+  void* context,
+  unsigned stack,
+  unsigned initFlags,
+  unsigned* outID
+) noexcept {
+  return m_workers.StartWorker(workerFunction, context, stack, initFlags, outID);
+}
+void Socket::StopWorkers() noexcept {
+  m_workers.StopWorkers();
+}
+
+bool Socket::StopRequested() const noexcept {
+  return m_workers.StopRequested();
+}
+
+bool Socket::WaitForWorkers(DWORD timeoutMsPerChunk) noexcept {
+  return m_workers.WaitForWorkers(timeoutMsPerChunk);
+}
+
+int Socket::ActiveWorkerCount() const noexcept {
+  return m_workers.ActiveWorkerCount();
+}
+
 bool Socket::UnregisterWSA() {
 	CloseSocketSafe(m_thisSocket, true);
-  if(!m_wsaRegistered.load(std::memory_order_acquire)) {
+  if(!IsRegistered()) {
     UpdateInterpreter("WSA never registered for this socket");
     return true;
   }
@@ -309,12 +347,12 @@ bool Socket::UnregisterWSA() {
   std::string msg = "";
   {
     std::scoped_lock lock(s_wsaMutex);
-    if(!m_wsaRegistered.load(std::memory_order_relaxed)) {
+    if(!IsRegistered()) {
       msg = "WSA already unregistered for this socket";
     } else {
-      m_wsaRegistered.store(false, std::memory_order_release);
-      m_configured.store(false, std::memory_order_release);
-      m_active.store(false, std::memory_order_release);
+      SetRegistered(false);
+      SetConfigured(false);
+      SetActive(false);
       if(s_wsaRefCount > 0) {
         --s_wsaRefCount;
         if(s_wsaRefCount == 0) {
@@ -327,7 +365,7 @@ bool Socket::UnregisterWSA() {
             msg += DecodeSocketError(code);
             failed = true;
             ++s_wsaRefCount;
-            m_wsaRegistered.store(true, std::memory_order_release);
+            SetRegistered(true);
           } else {
             msg = "WSA released successfully";
           }
@@ -374,6 +412,38 @@ bool Socket::ShutDownSocket(SOCKET& socketToShutDown) {
 		UpdateInterpreter("Shut down socket");
 		return true;
 	}
+}
+
+bool Socket::IsRegistered() const noexcept {
+  return m_wsaRegistered.load(std::memory_order_acquire);
+}
+
+void Socket::SetRegistered(bool registered) noexcept {
+  m_wsaRegistered.store(registered, std::memory_order_release);
+}
+
+bool Socket::IsActive() const noexcept {
+  return m_active.load(std::memory_order_acquire);
+}
+
+void Socket::SetActive(bool active) noexcept {
+  m_active.store(active, std::memory_order_release);
+}
+
+bool Socket::IsConfigured() const noexcept {
+  return m_configured.load(std::memory_order_acquire);
+}
+
+void Socket::SetConfigured(bool configured) noexcept {
+  m_configured.store(configured, std::memory_order_release);
+}
+
+bool Socket::IsClosing() const noexcept {
+  return m_closeAttempt.load(std::memory_order_acquire);
+}
+
+void Socket::SetClosing(bool closing) noexcept {
+  m_closeAttempt.store(closing, std::memory_order_release);
 }
 
 void Socket::ErrorInterpreter(const std::string& errorMessage, bool hasCode) {
@@ -576,18 +646,18 @@ void Socket::FallbackLog(const char* msg) noexcept {
   std::fputc('\n', stderr);
 }
 
-constexpr bool Socket::IsInitializedIPv4(const sockaddr_in& socketAddress) noexcept {
-  return socketAddress.sin_family == AF_INET;
-}
-
-constexpr bool Socket::IsValidEndpointIPv4(const sockaddr_in& socketAddress) noexcept {
-  return socketAddress.sin_family == AF_INET && socketAddress.sin_port != 0 && socketAddress.sin_addr.s_addr != htonl(INADDR_ANY);
-}
-
-constexpr bool Socket::IsMulticastIPv4(const in_addr& address) noexcept {
+bool Socket::IsMulticastIPv4(const in_addr& address) noexcept {
   return (ntohl(address.s_addr) & 0xF0000000u) == 0xE0000000u;
 }
 
-constexpr bool Socket::IsLimitedBroadcastIPv4(const in_addr& address) noexcept {
+bool Socket::IsInitializedIPv4(const sockaddr_in& socketAddress) noexcept {
+  return socketAddress.sin_family == AF_INET;
+}
+
+bool Socket::IsValidEndpointIPv4(const sockaddr_in& socketAddress) noexcept {
+  return socketAddress.sin_family == AF_INET && socketAddress.sin_port != 0 && socketAddress.sin_addr.s_addr != htonl(INADDR_ANY);
+}
+
+bool Socket::IsLimitedBroadcastIPv4(const in_addr& address) noexcept {
   return address.s_addr == INADDR_BROADCAST;
 }

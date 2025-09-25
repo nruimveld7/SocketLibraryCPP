@@ -195,6 +195,7 @@
     <ClInclude Include="..\..\include\SocketLibrary\WinSock2First.h">
       <Link>include\SocketLibrary\WinSock2First.h</Link>
     </ClInclude>
+    <ClInclude Include="..\..\include\SocketLibrary\WorkerGroup.h" />
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
@@ -209,6 +210,7 @@
     <ClCompile Include="TCPServerSocket.cpp" />
     <ClCompile Include="UDPClientSocket.cpp" />
     <ClCompile Include="UDPServerSocket.cpp" />
+    <ClCompile Include="WorkerGroup.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -113,12 +113,12 @@ private:
 		SOCKET clientSocket;
 	};
   bool ReadyToAccept() const noexcept;
-  static unsigned __stdcall StaticAcceptConnection(void* arg);
+  static unsigned __stdcall StaticAcceptConnection(void* arg) noexcept;
 	void AcceptConnection();
 	void RegisterClient(SOCKET socket);
   bool ApplySocketOptions(SOCKET socket) noexcept;
   void UpdateConnectionBuckets(size_t desiredSize);
-  static unsigned __stdcall StaticMessageHandler(void* arg);
+  static unsigned __stdcall StaticMessageHandler(void* arg) noexcept;
 	void MessageHandler(SOCKET acceptSocket);
   void Broadcast(const void* bytes, size_t byteCount);
   int Send(const void* bytes, size_t byteCount, const std::string& targetIP, const std::string& targetPort);
@@ -127,6 +127,7 @@ private:
   int Send(const void* bytes, size_t byteCount);
   int Send(const void* bytes, size_t byteCount, SOCKET target);
   int SendAll(SOCKET socket, const char* buffer, int bufferSize);
+  bool Cleanup() override;
 	bool CloseClientSocket(SOCKET clientSocket);
 	void OnClientDisconnect();
 	void OnRead(unsigned char* message, int byteCount, SOCKET sender);

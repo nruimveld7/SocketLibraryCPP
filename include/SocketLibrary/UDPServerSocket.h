@@ -76,7 +76,7 @@ public:
   }
 
 private:
-  static unsigned __stdcall StaticMessageHandler(void* arg);
+  static unsigned __stdcall StaticMessageHandler(void* arg) noexcept;
 	void MessageHandler();
   int Send(const void* bytes, size_t byteCount, const std::string& targetIP, const std::string& targetPort);
   int Send(const void* bytes, size_t byteCount, const std::string& targetIP, int targetPort);
@@ -84,6 +84,7 @@ private:
   int Send(const void* bytes, size_t byteCount, const sockaddr_in& target);
   int Send(const void* bytes, size_t byteCount);
   int SendAll(sockaddr_in socket, const char* data, int total);
+  bool Cleanup() override;
 	void OnRead(unsigned char* message, int byteCount, sockaddr_in sender);
 	sockaddr_in m_target;
   mutable std::shared_mutex m_targetMutex;

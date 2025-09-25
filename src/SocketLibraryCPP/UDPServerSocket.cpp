@@ -39,30 +39,22 @@ bool UDPServerSocket::Open() {
 		return false;
 	}
 	UpdateInterpreter("Binding successful!");
-	m_configured = true;
+  SetConfigured(true);
 	UpdateInterpreter("Preparing to listen for messages");
-  uintptr_t threadPtr = _beginthreadex(nullptr, 0, &UDPServerSocket::StaticMessageHandler, this, 0, nullptr);
-  HANDLE threadHandle = reinterpret_cast<HANDLE>(threadPtr);
-  if(!threadHandle) {
+  if(!StartWorker(&UDPServerSocket::StaticMessageHandler, this)) {
     ErrorInterpreter("Thread creation error: ", true);
     UnregisterWSA();
     return false;
   }
-  CloseHandle(threadHandle);
 	UpdateInterpreter("Ready to send messages");
 	return true;
 }
 
 bool UDPServerSocket::Close() {
-	m_active.store(false, std::memory_order_release);
-	UpdateInterpreter("Closing server socket");
-  const bool socketClosed = CloseSocketSafe(m_thisSocket, false);
-  m_configured.store(false, std::memory_order_release);
-  const bool wsaUnregistered = UnregisterWSA();
-  return socketClosed && wsaUnregistered;
+  return Socket::Close();
 }
 
-unsigned __stdcall UDPServerSocket::StaticMessageHandler(void* arg) {
+unsigned __stdcall UDPServerSocket::StaticMessageHandler(void* arg) noexcept {
   auto* serverSocket = static_cast<UDPServerSocket*>(arg);
   if(serverSocket) {
     serverSocket->MessageHandler();
@@ -71,7 +63,7 @@ unsigned __stdcall UDPServerSocket::StaticMessageHandler(void* arg) {
 }
 
 void UDPServerSocket::MessageHandler() {
-	m_active.store(true, std::memory_order_release);
+  SetActive(true);
   int lastMessageLength = -1;
   std::vector<unsigned char> buffer;
 	while(true) {
@@ -90,7 +82,7 @@ void UDPServerSocket::MessageHandler() {
 			(sockaddr*)&clientAddr,
 			&addrLen
 		);
-		if(!m_active.load(std::memory_order_acquire)) {
+		if(!IsActive()) {
 			break;
 		}
 		if(byteCount >= 0) {
@@ -145,9 +137,7 @@ int UDPServerSocket::Send(const void* bytes, size_t byteCount) {
     ErrorInterpreter("Send error: payload too large for WinSock", false);
     return 0;
   }
-  bool configured = m_configured.load(std::memory_order_acquire);
-  bool registered = m_wsaRegistered.load(std::memory_order_acquire);
-  if(!(configured && registered && m_thisSocket != INVALID_SOCKET)) {
+  if(!(IsConfigured() && IsRegistered()  && m_thisSocket != INVALID_SOCKET)) {
     ErrorInterpreter("Send error: socket is not initialized/connected", false);
     return 0;
   }
@@ -198,6 +188,12 @@ int UDPServerSocket::SendAll(sockaddr_in socket, const char* buffer, int bufferS
     totalSent += sentBytes;
   }
   return totalSent;
+}
+
+bool UDPServerSocket::Cleanup() {
+  UpdateInterpreter("Closing server socket");
+  const bool socketClosed = CloseSocketSafe(m_thisSocket, false);
+  return socketClosed;
 }
 
 void UDPServerSocket::OnRead(unsigned char* message, int byteCount, sockaddr_in sender) {

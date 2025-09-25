@@ -9,61 +9,85 @@
 
 class UDPClientSocket : public Socket {
 public:
-	UDPClientSocket();
-	~UDPClientSocket();
-	bool Open();
-	bool Close();
-	void SetOnRead(std::function<void(unsigned char* message, int byteCount)> onRead);
-	template <typename T>
-	int Send(T* buffer, int buffLen, std::string ip, int port) {
-		sockaddr_in temp = m_target;
-		if(inet_pton(AF_INET, ip.c_str(), &m_target.sin_addr) != 1) {
-			ErrorInterpreter("Error Changing Target: ", true);
-			m_target = temp;
-			return 0;
-		}
-		if(port < 0 || port > 65535) {
-			ErrorInterpreter("Error Changing Target: Port Out Of Range", false);
-			m_target = temp;
-			return 0;
-		}
-		m_target.sin_port = htons(port);
-		return Send(buffer, buffLen);
-	}
-	template <typename T>
-	int Send(T* buffer, int buffLen) {
-		static_assert(!std::is_same<T, std::string>::value, "std::string must be passed as const char* or c_str()");
-		if(buffer == nullptr || buffLen <= 0) {
-			ErrorInterpreter("Invalid buffer or buffer length", false);
-			return 0;
-		}
-		UpdateInterpreter("Sending Message: " + std::to_string(buffLen) + " Bytes");
-		if(m_configured && m_wsaRegistered && m_thisSocket != INVALID_SOCKET) {
-			//Convert buffer to byte array
-			const unsigned char* sendBuff = reinterpret_cast<const unsigned char*>(buffer);
-			int byteCount = sendto(
-				m_thisSocket,
-				reinterpret_cast<const char*>(sendBuff),
-				buffLen,
-				0,
-				reinterpret_cast<SOCKADDR*>(&m_target),
-				sizeof(m_target)
-			);
-			if(byteCount <= 0) {
-				ErrorInterpreter("Error Sending Mesage: ", true);
-			}
-			return byteCount;
-		} else {
-			ErrorInterpreter("Socket Is Not Initialized", false);
-			return 0;
-		}
-	}
+  UDPClientSocket();
+  ~UDPClientSocket() noexcept override;
+  void SetOnRead(std::function<void(unsigned char* message, int byteCount, sockaddr_in sender)> onRead);
+  bool Open();
+  bool Close();
+
+  template <typename T>
+  int Send(const T* buffer, size_t bufferSize, const std::string& targetIP, const std::string& targetPort) {
+    static_assert(!std::is_void_v<T>, "T cannot be void");
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
+    if(bufferSize > (std::numeric_limits<size_t>::max() / sizeof(T))) {
+      ErrorInterpreter("Send error: payload too large for WinSock", false);
+      return 0;
+    }
+    const size_t bytes = bufferSize * sizeof(T);
+    return Send(static_cast<const void*>(buffer), bytes, targetIP, targetPort);
+  }
+
+  template <typename T>
+  int Send(const T* buffer, size_t bufferSize, const std::string& targetIP, int targetPort) {
+    static_assert(!std::is_void_v<T>, "T cannot be void");
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
+    if(bufferSize > (std::numeric_limits<size_t>::max() / sizeof(T))) {
+      ErrorInterpreter("Send error: payload too large for WinSock", false);
+      return 0;
+    }
+    const size_t bytes = bufferSize * sizeof(T);
+    return Send(static_cast<const void*>(buffer), bytes, targetIP, targetPort);
+  }
+
+  template <typename T>
+  int Send(const T* buffer, size_t bufferSize, const std::string& targetAddress) {
+    static_assert(!std::is_void_v<T>, "T cannot be void");
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
+    if(bufferSize > (std::numeric_limits<size_t>::max() / sizeof(T))) {
+      ErrorInterpreter("Send error: payload too large for WinSock", false);
+      return 0;
+    }
+    const size_t bytes = bufferSize * sizeof(T);
+    return Send(static_cast<const void*>(buffer), bytes, targetAddress);
+  }
+
+  template <typename T>
+  int Send(const T* buffer, size_t bufferSize) {
+    static_assert(!std::is_void_v<T>, "T cannot be void");
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
+    if(bufferSize > (std::numeric_limits<size_t>::max() / sizeof(T))) {
+      ErrorInterpreter("Send error: payload too large for WinSock", false);
+      return 0;
+    }
+    const size_t bytes = bufferSize * sizeof(T);
+    return Send(static_cast<const void*>(buffer), bytes);
+  }
+
+  template <typename T>
+  int Send(const T* buffer, size_t bufferSize, sockaddr_in target) {
+    static_assert(!std::is_void_v<T>, "T cannot be void");
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
+    if(bufferSize > (std::numeric_limits<size_t>::max() / sizeof(T))) {
+      ErrorInterpreter("Send error: payload too large for WinSock", false);
+      return 0;
+    }
+    const size_t bytes = bufferSize * sizeof(T);
+    return Send(static_cast<const void*>(buffer), bytes, target);
+  }
 
 private:
-	static DWORD WINAPI StaticMessageHandler(LPVOID lpParam);
-	void MessageHandler();
-	void OnRead(unsigned char* message, int byteCount);
-	sockaddr_in m_target;
-	std::function<void(unsigned char* message, int byteCount)> m_onRead;
-	std::shared_mutex m_onReadMutex;
+  static unsigned __stdcall StaticMessageHandler(void* arg) noexcept;
+  void MessageHandler();
+  int Send(const void* bytes, size_t byteCount, const std::string& targetIP, const std::string& targetPort);
+  int Send(const void* bytes, size_t byteCount, const std::string& targetIP, int targetPort);
+  int Send(const void* bytes, size_t byteCount, const std::string& targetAddress);
+  int Send(const void* bytes, size_t byteCount, const sockaddr_in& target);
+  int Send(const void* bytes, size_t byteCount);
+  int SendAll(sockaddr_in socket, const char* data, int total);
+  bool Cleanup() override;
+  void OnRead(unsigned char* message, int byteCount, sockaddr_in sender);
+  sockaddr_in m_target;
+  mutable std::shared_mutex m_targetMutex;
+  std::function<void(unsigned char* message, int byteCount, sockaddr_in sender)> m_onRead;
+  std::shared_mutex m_onReadMutex;
 };

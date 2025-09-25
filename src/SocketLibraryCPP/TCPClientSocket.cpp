@@ -72,50 +72,34 @@ bool TCPClientSocket::GetConnecting() const noexcept {
 }
 
 bool TCPClientSocket::Open() {
-	m_cancelConnect.store(false, std::memory_order_release);
-	if(Initialize(SOCK_STREAM)) {
-		m_closeAttempt.store(false, std::memory_order_release);
-    m_configured.store(true, std::memory_order_release);
-		UpdateInterpreter("Ready to connect");
-    uintptr_t threadPtr = _beginthreadex(nullptr, 0, &TCPClientSocket::StaticConnect, this, 0, nullptr);
-    HANDLE threadHandle = reinterpret_cast<HANDLE>(threadPtr);
-    if(!threadHandle) {
-      ErrorInterpreter("Thread creation error: ", true);
-      UnregisterWSA();
-      return false;
-    }
-    CloseHandle(threadHandle);
-    return true;
-	} else {
-		UpdateInterpreter("Error initializing socket");
-		return false;
-	}
+  SetCancelling(false);
+  if(!Initialize(SOCK_STREAM)) {
+    ErrorInterpreter("Error initializing socket", false);
+    return false;
+  }
+  SetConfigured(true);
+  SetClosing(false);
+	UpdateInterpreter("Ready to connect");
+  if(!StartWorker(&TCPClientSocket::StaticConnect, this)) {
+    ErrorInterpreter("Thread creation error: ", true);
+    UnregisterWSA();
+    return false;
+  }
+  return true;
 }
 
 bool TCPClientSocket::Close() {
-  m_active.store(false, std::memory_order_release);
-  m_closeAttempt.store(true, std::memory_order_release);
-  UpdateInterpreter("Closing client socket");
-  m_cancelConnect.store(true, std::memory_order_release);
-  m_connecting.store(false, std::memory_order_release);
-  const bool wasConnected = m_connected.exchange(false, std::memory_order_acq_rel);
-  const bool socketClosed = CloseSocketSafe(m_thisSocket, wasConnected);
-  if(wasConnected) {
-    OnDisconnect();
-  }
-  m_configured.store(false, std::memory_order_release);
-  const bool wsaUnregistered = UnregisterWSA();
-  return socketClosed && wsaUnregistered;
+  return Socket::Close();
 }
 
 bool TCPClientSocket::ReadyToConnect() const noexcept {
-  const bool configured = m_configured.load(std::memory_order_acquire);
-  const bool wsaRegistered = m_wsaRegistered.load(std::memory_order_acquire);
-  const bool connected = m_connected.load(std::memory_order_acquire);
-  return configured && wsaRegistered && m_thisSocket != INVALID_SOCKET && !connected;
+  const bool configured = IsConfigured();
+  const bool registered = IsRegistered();
+  const bool connected = IsConnected();
+  return !connected && configured && registered && m_thisSocket != INVALID_SOCKET;
 }
 
-unsigned __stdcall TCPClientSocket::StaticConnect(void* arg) {
+unsigned __stdcall TCPClientSocket::StaticConnect(void* arg) noexcept {
   auto* clientSocket = static_cast<TCPClientSocket*>(arg);
   if(clientSocket) {
     clientSocket->Connect();
@@ -124,41 +108,61 @@ unsigned __stdcall TCPClientSocket::StaticConnect(void* arg) {
 }
 
 void TCPClientSocket::Connect() {
-	UpdateInterpreter("Attempting socket connection");
-  if(!ReadyToConnect()) {
-    ErrorInterpreter("Socket not initialized", false);
-    return;
-  }
-  while(ReadyToConnect()) {
-    m_connecting.store(true, std::memory_order_release);
-    while(!m_connected.load(std::memory_order_acquire) && !m_cancelConnect.load(std::memory_order_acquire)) {
-      if(::connect(m_thisSocket, reinterpret_cast<SOCKADDR*>(&m_service), sizeof(m_service)) != SOCKET_ERROR) {
-        m_connected.store(true, std::memory_order_release);
-        m_active.store(true, std::memory_order_release);
-        UpdateInterpreter("Client connected!");
-        break;
+  while(ReadyToConnect() && !StopRequested()) {
+    //Try to connect (retry inside ConnectAttempt)
+    if(!IsConnected() && !IsCancelling()) {
+      if(!ConnectAttempt()) {
+        if(StopRequested() || IsCancelling()) {
+          return;
+        }
+        if(!ReadyToConnect()) {
+          return;
+        }
+        continue;
       }
-      ErrorInterpreter("Error connecting to socket: ", true);
-      const int delay = m_connectionDelay.load(std::memory_order_relaxed);
-      UpdateInterpreter("Trying again in " + std::to_string(delay) + " seconds");
-      std::this_thread::sleep_for(std::chrono::seconds(delay));
     }
-    m_connecting.store(false, std::memory_order_release);
-    if(m_cancelConnect.load(std::memory_order_acquire)) {
-      UpdateInterpreter("Connection attempt cancelled");
-      return;
-    }
-    while(m_connected.load(std::memory_order_acquire)) {
+    //Process messages while connected
+    while(IsConnected() && !StopRequested()) {
       if(!MessageHandler()) {
         break;
       }
     }
-    if(!m_cancelConnect.load(std::memory_order_acquire)) {
-      CloseSocketSafe(m_thisSocket, false);
-      if(!Initialize(SOCK_STREAM)) {
-        ErrorInterpreter("Reconnect: reinitialization failed", false);
-        return;
-      }
+    if(StopRequested() || IsCancelling()) {
+      return;
+    }
+    //Reinitialize for reconnect and loop
+    CloseSocketSafe(m_thisSocket, false);
+    if(!Initialize(SOCK_STREAM)) {
+      ErrorInterpreter("Reconnect: reinitialization failed", false);
+      return;
+    }
+  }
+}
+
+bool TCPClientSocket::ConnectAttempt() {
+  SetConnecting(true);
+  UpdateInterpreter("Attempting socket connection");
+  while(true) {
+    if(IsCancelling() || StopRequested() || !ReadyToConnect()) {
+      SetConnecting(false);
+      return false;
+    }
+    if(IsConnected()) {
+      SetConnecting(false);
+      return true;
+    }
+    if(::connect(m_thisSocket, reinterpret_cast<SOCKADDR*>(&m_service), sizeof(m_service)) != SOCKET_ERROR) {
+      SetConnected(true);
+      SetActive(true);
+      SetConnecting(false);
+      UpdateInterpreter("Client connected!");
+      return true;
+    }
+    ErrorInterpreter("Error connecting to socket: ", true);
+    const int delay = m_connectionDelay.load(std::memory_order_relaxed);
+    if(delay > 0) {
+      UpdateInterpreter("Trying again in " + std::to_string(delay) + " seconds");
+      std::this_thread::sleep_for(std::chrono::seconds(delay));
     }
   }
 }
@@ -167,6 +171,11 @@ bool TCPClientSocket::MessageHandler() {
   static thread_local int lastMessageLength = -1;
   static thread_local std::vector<unsigned char> buffer;
   const int messageLength = GetMessageLength();
+  if(messageLength <= 0) {
+    ErrorInterpreter("Invalid message length: " + std::to_string(messageLength), false);
+    OnDisconnect();
+    return false;
+  }
   if(messageLength != lastMessageLength) {
     buffer.resize(messageLength);
     lastMessageLength = messageLength;
@@ -195,10 +204,7 @@ int TCPClientSocket::Send(const void* bytes, size_t byteCount) {
     ErrorInterpreter("Send(bytes): payload too large for WinSock", false);
     return 0;
   }
-  bool configured = m_configured.load(std::memory_order_acquire);
-  bool registered = m_wsaRegistered.load(std::memory_order_acquire);
-  bool connected = m_connected.load(std::memory_order_acquire);
-  if(!(configured && registered && connected && m_thisSocket != INVALID_SOCKET)) {
+  if(!(IsConfigured() && IsRegistered() && IsConnected() && m_thisSocket != INVALID_SOCKET)) {
     ErrorInterpreter("Socket is not initialized/connected", false);
     return 0;
   }
@@ -233,6 +239,42 @@ int TCPClientSocket::SendAll(const char* buffer, int bufferSize) {
     totalSent += sentBytes;
   }
   return totalSent;
+}
+
+bool TCPClientSocket::IsConnected() const noexcept {
+  return m_connected.load(std::memory_order_acquire);
+}
+
+void TCPClientSocket::SetConnected(bool connected) noexcept {
+  m_connected.store(connected, std::memory_order_release);
+}
+
+bool TCPClientSocket::IsCancelling() const noexcept {
+  return m_cancelConnect.load(std::memory_order_acquire);
+}
+
+void TCPClientSocket::SetCancelling(bool cancelling) noexcept {
+  m_cancelConnect.store(cancelling, std::memory_order_release);
+}
+
+bool TCPClientSocket::IsConnecting() const noexcept {
+  return m_connecting.load(std::memory_order_acquire);
+}
+
+void TCPClientSocket::SetConnecting(bool connecting) noexcept {
+  m_connecting.store(connecting, std::memory_order_release);
+}
+
+bool TCPClientSocket::Cleanup() {
+  UpdateInterpreter("Closing client socket");
+  SetCancelling(true);
+  SetConnecting(false);
+  const bool wasConnected = m_connected.exchange(false, std::memory_order_acq_rel);
+  const bool socketClosed = CloseSocketSafe(m_thisSocket, wasConnected);
+  if(wasConnected) {
+    OnDisconnect();
+  }
+  return socketClosed;
 }
 
 void TCPClientSocket::OnDisconnect() {

@@ -12,7 +12,6 @@ inline constexpr int INVALID_PORT = -1;
 
 class Socket {
 public:
-	Socket();
 	virtual ~Socket() noexcept;
   //Non-copyable: prevent accidental double-close / slicing.
   Socket(const Socket&) = delete;
@@ -32,6 +31,7 @@ public:
   int GetMessageLength() const noexcept;
 	bool SetMessageLength(int messageLength);
 	bool SetMessageLength(const std::string& messageLength);
+  virtual bool Close();
   bool GetActive() const noexcept;
 	static bool CheckIP(const std::string& ip) noexcept;
   static bool CheckPort(int port) noexcept;
@@ -46,11 +46,32 @@ public:
   }
 
 protected:
+  Socket();
+  virtual bool Cleanup() = 0;
 	bool Initialize(int socketType);
 	bool RegisterWSA();
+  bool StartWorker(
+    unsigned(__stdcall* workerFunction)(void*),
+    void* context,
+    unsigned stack = 0,
+    unsigned initFlags = 0,
+    unsigned* outID = nullptr
+  ) noexcept;
+  void StopWorkers() noexcept;
+  bool StopRequested() const noexcept;
+  bool WaitForWorkers(DWORD timeoutMsPerChunk) noexcept;
+  int ActiveWorkerCount() const noexcept;
 	bool UnregisterWSA();
 	bool CloseSocketSafe(SOCKET& socketToClose, bool shutDownSocket);
 	bool ShutDownSocket(SOCKET& socketToShutDown);
+  bool IsRegistered() const noexcept;
+  void SetRegistered(bool registered) noexcept;
+  bool IsActive() const noexcept;
+  void SetActive(bool active) noexcept;
+  bool IsConfigured() const noexcept;
+  void SetConfigured(bool configured) noexcept;
+  bool IsClosing() const noexcept;
+  void SetClosing(bool closing) noexcept;
 	void ErrorInterpreter(const std::string& errorMessage, bool hasCode);
 	void UpdateInterpreter(const std::string& updateMessage);
   static std::string DecodeSocketError(int errorCode);
@@ -65,12 +86,11 @@ protected:
   static int GetSocketPort(const sockaddr_in& addr) noexcept;
   static bool StringToInt(const std::string& convertToInt, int* outInt);
   static void FallbackLog(const char* msg) noexcept;
-  static constexpr bool IsInitializedIPv4(const sockaddr_in& socketAddress) noexcept;
-  static constexpr bool IsValidEndpointIPv4(const sockaddr_in& socketAddress) noexcept;
-  static constexpr bool IsMulticastIPv4(const in_addr& address) noexcept;
-  static constexpr bool IsLimitedBroadcastIPv4(const in_addr& address) noexcept;
+  static bool IsMulticastIPv4(const in_addr& address) noexcept;
+  static bool IsInitializedIPv4(const sockaddr_in& socketAddress) noexcept;
+  static bool IsValidEndpointIPv4(const sockaddr_in& socketAddress) noexcept;
+  static bool IsLimitedBroadcastIPv4(const in_addr& address) noexcept;
 	SOCKET m_thisSocket;
-  WorkerGroup m_workers;
 	sockaddr_in m_service;
   std::string m_name;
 	std::string m_ip;
@@ -88,5 +108,8 @@ protected:
 	static int s_wsaRefCount;
 	static std::mutex s_wsaMutex;
 	static WSADATA s_wsaData;
+
+private:
+  WorkerGroup m_workers;
 
 };

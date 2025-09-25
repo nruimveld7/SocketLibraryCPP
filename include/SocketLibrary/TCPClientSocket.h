@@ -36,15 +36,23 @@ public:
 
 private:
   bool ReadyToConnect() const noexcept;
-  static unsigned __stdcall StaticConnect(void* arg);
+  static unsigned __stdcall StaticConnect(void* arg) noexcept;
 	void Connect();
+  bool ConnectAttempt();
 	bool MessageHandler();
   int Send(const void* bytes, size_t byteCount);
   int SendAll(const char* buffer, int bufferSize);
+  bool IsConnected() const noexcept;
+  void SetConnected(bool connected) noexcept;
+  bool IsCancelling() const noexcept;
+  void SetCancelling(bool cancelling) noexcept;
+  bool IsConnecting() const noexcept;
+  void SetConnecting(bool connecting) noexcept;
+  bool Cleanup() override;
 	void OnDisconnect();
 	void OnRead(unsigned char* message, int byteCount);
-	std::atomic<bool> m_connected;
 	std::atomic<int> m_connectionDelay;
+	std::atomic<bool> m_connected;
 	std::atomic<bool> m_cancelConnect;
 	std::atomic<bool> m_connecting;
 	std::function<void()> m_onDisconnect;
