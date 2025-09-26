@@ -25,29 +25,51 @@ void UDPServerSocket::SetOnRead(std::function<void(unsigned char* message, int b
 }
 
 bool UDPServerSocket::Open() {
-	if(!Initialize(SOCK_DGRAM)) {
-		ErrorInterpreter("Error initializing socket", false);
-		return false;
-	}
-	if(m_target.sin_family == AF_UNSPEC) {
-		m_target = m_service;
-	}
-	UpdateInterpreter("Binding socket");
-	if(bind(m_thisSocket, (SOCKADDR*)&m_service, sizeof(m_service)) == SOCKET_ERROR) {
-		ErrorInterpreter("Socket binding error: ", true);
-		UnregisterWSA();
-		return false;
-	}
-	UpdateInterpreter("Binding successful!");
-  SetConfigured(true);
-	UpdateInterpreter("Preparing to listen for messages");
-  if(!StartWorker(&UDPServerSocket::StaticMessageHandler, this)) {
-    ErrorInterpreter("Thread creation error: ", true);
-    UnregisterWSA();
+  //1) Create UDP socket
+  if(!Initialize(Protocol::UDP)) {
+    ErrorInterpreter("Error initializing socket", false);
+    Close();
     return false;
   }
-	UpdateInterpreter("Ready to send messages");
-	return true;
+  //2) Build bind address and bind the socket
+  UpdateInterpreter("Binding socket");
+  sockaddr_in bindAddress{};
+  int bindLength = sizeof(bindAddress);
+  if(!GetServiceAddress(Protocol::UDP, bindAddress)) {
+    ErrorInterpreter("Invalid server IP/Port", false);
+    Close();
+    return false;
+  }
+  if(::bind(m_thisSocket, reinterpret_cast<const sockaddr*>(&bindAddress), bindLength) == SOCKET_ERROR) {
+    ErrorInterpreter("Socket binding error: ", true);
+    Close();
+    return false;
+  }
+  if(GetServerPort() == 0) {
+    sockaddr_in nameAddress{};
+    int nameLength = sizeof(nameAddress);
+    if(::getsockname(m_thisSocket, reinterpret_cast<sockaddr*>(&nameAddress), &nameLength) == 0) {
+      SetServerPort(static_cast<int>(ntohs(nameAddress.sin_port)));
+    }
+  }
+  UpdateInterpreter("Binding successful!");
+  //3) Initialize default target
+  {
+    std::unique_lock lock(m_targetMutex);
+    if(m_target.sin_family == AF_UNSPEC) {
+      m_target = bindAddress;
+    }
+  }
+  //4) Listen on bound socket
+  SetConfigured(true);
+  UpdateInterpreter("Preparing to listen for messages");
+  if(!StartWorker(&UDPServerSocket::StaticMessageHandler, this)) {
+    ErrorInterpreter("Thread creation error: ", true);
+    Close();
+    return false;
+  }
+  UpdateInterpreter("Ready to send messages");
+  return true;
 }
 
 bool UDPServerSocket::Close() {
@@ -66,8 +88,12 @@ void UDPServerSocket::MessageHandler() {
   SetActive(true);
   int lastMessageLength = -1;
   std::vector<unsigned char> buffer;
-	while(true) {
+  while(IsActive() && !StopRequested()) {
     int messageLength = GetMessageLength();
+    if(messageLength <= 0) {
+      ErrorInterpreter("Invalid message length: " + std::to_string(messageLength), false);
+      break;
+    }
     if(messageLength != lastMessageLength) {
       buffer.resize(messageLength);
       lastMessageLength = messageLength;
@@ -86,7 +112,7 @@ void UDPServerSocket::MessageHandler() {
 			break;
 		}
 		if(byteCount >= 0) {
-			UpdateInterpreter("Received " + std::to_string(byteCount) + " bytes");
+      TrafficUpdate("Received " + std::to_string(byteCount) + " bytes");
 			OnRead(buffer.data(), byteCount, clientAddr);
       continue;
 		}
@@ -109,7 +135,7 @@ int UDPServerSocket::Send(const void* bytes, size_t byteCount, const std::string
     return 0;
   }
   sockaddr_in target{};
-  if(!ParseSocketAddress(targetAddress, SOCK_DGRAM, target)) {
+  if(!ParseSocketAddress(targetAddress, Protocol::UDP, target)) {
     ErrorInterpreter("Send error: invalid target address format", false);
     return 0;
   }
@@ -150,13 +176,13 @@ int UDPServerSocket::Send(const void* bytes, size_t byteCount) {
     ErrorInterpreter("Send error: invalid target address", false);
     return 0;
   }
-  UpdateInterpreter("Sending message to: " + GetSocketAddress(target) + " - " + std::to_string(byteCount) + " bytes");
+  TrafficUpdate("Sending message to: " + GetSocketAddress(target) + " - " + std::to_string(byteCount) + " bytes");
   const int totalBytes = static_cast<int>(byteCount);
   const int sentBytes = SendAll(target, static_cast<const char*>(bytes), totalBytes);
   if(sentBytes != totalBytes) {
-    ErrorInterpreter("Error sending message: ", true);
+    ErrorInterpreter("Error sending message to " + GetSocketAddress(target) + ": ", true);
   } else {
-    UpdateInterpreter("Successfully sent message");
+    TrafficUpdate("Successfully sent message");
   }
   return sentBytes;
 }

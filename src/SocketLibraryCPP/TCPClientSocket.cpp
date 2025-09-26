@@ -55,7 +55,7 @@ bool TCPClientSocket::SetConnectionDelay(int connectionDelay) {
 
 bool TCPClientSocket::SetConnectionDelay(const std::string& connectionDelay) {
 	int connDelayAttempt = 0;
-	if(StringToInt(connectionDelay, &connDelayAttempt)) {
+	if(StringToInt(connectionDelay, connDelayAttempt)) {
 		return SetConnectionDelay(connDelayAttempt);
 	} else {
 		ErrorInterpreter("Error parsing connection delay value from '" + connectionDelay + "'", false);
@@ -72,17 +72,25 @@ bool TCPClientSocket::GetConnecting() const noexcept {
 }
 
 bool TCPClientSocket::Open() {
+  //1) Create the TCP socket
   SetCancelling(false);
-  if(!Initialize(SOCK_STREAM)) {
+  if(!Initialize(Protocol::TCP)) {
     ErrorInterpreter("Error initializing socket", false);
+    Close();
     return false;
   }
+  if(m_thisSocket == INVALID_SOCKET) {
+    ErrorInterpreter("Socket no longer initialized", false);
+    Close();
+    return false;
+  }
+  //2) Attempt to connect to server socket
   SetConfigured(true);
   SetClosing(false);
 	UpdateInterpreter("Ready to connect");
   if(!StartWorker(&TCPClientSocket::StaticConnect, this)) {
     ErrorInterpreter("Thread creation error: ", true);
-    UnregisterWSA();
+    Close();
     return false;
   }
   return true;
@@ -132,26 +140,35 @@ void TCPClientSocket::Connect() {
     }
     //Reinitialize for reconnect and loop
     CloseSocketSafe(m_thisSocket, false);
-    if(!Initialize(SOCK_STREAM)) {
+    if(!Initialize(Protocol::TCP)) {
       ErrorInterpreter("Reconnect: reinitialization failed", false);
       return;
     }
+    SetConfigured(true);
   }
 }
 
 bool TCPClientSocket::ConnectAttempt() {
+  if(m_thisSocket == INVALID_SOCKET) {
+    ErrorInterpreter("Socket no longer initialized", false);
+    Close();
+    return false;
+  }
   SetConnecting(true);
   UpdateInterpreter("Attempting socket connection");
-  while(true) {
-    if(IsCancelling() || StopRequested() || !ReadyToConnect()) {
-      SetConnecting(false);
-      return false;
-    }
+  while(!IsCancelling() && !StopRequested() && ReadyToConnect()) {
     if(IsConnected()) {
       SetConnecting(false);
       return true;
     }
-    if(::connect(m_thisSocket, reinterpret_cast<SOCKADDR*>(&m_service), sizeof(m_service)) != SOCKET_ERROR) {
+    sockaddr_in address{};
+    int addressSize = sizeof(address);
+    if(!GetServiceAddress(Protocol::TCP, address)) {
+      ErrorInterpreter("Invalid server IP/Port", false);
+      Close();
+      return false;
+    }
+    if(::connect(m_thisSocket, reinterpret_cast<SOCKADDR*>(&address), addressSize) != SOCKET_ERROR) {
       SetConnected(true);
       SetActive(true);
       SetConnecting(false);
@@ -159,12 +176,26 @@ bool TCPClientSocket::ConnectAttempt() {
       return true;
     }
     ErrorInterpreter("Error connecting to socket: ", true);
-    const int delay = m_connectionDelay.load(std::memory_order_relaxed);
-    if(delay > 0) {
-      UpdateInterpreter("Trying again in " + std::to_string(delay) + " seconds");
-      std::this_thread::sleep_for(std::chrono::seconds(delay));
+    if(m_thisSocket == INVALID_SOCKET) {
+      ErrorInterpreter("Socket no longer initialized", false);
+      SetConnecting(false);
+      Close();
+      return false;
+    }
+    int delay = m_connectionDelay.load(std::memory_order_relaxed);
+    if(delay <= 0) {
+      delay = 1;
+    }
+    for(int i = 0; i < delay; ++i) {
+      if(IsCancelling() || StopRequested()) {
+        SetConnecting(true);
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::seconds(1));
     }
   }
+  SetConnecting(false);
+  return false;
 }
 
 bool TCPClientSocket::MessageHandler() {
@@ -182,7 +213,7 @@ bool TCPClientSocket::MessageHandler() {
   }
   const int byteCount = ::recv(m_thisSocket, reinterpret_cast<char*>(buffer.data()), messageLength, 0);
   if(byteCount > 0) {
-    UpdateInterpreter("Received " + std::to_string(byteCount) + " bytes");
+    TrafficUpdate("Received " + std::to_string(byteCount) + " bytes");
     OnRead(buffer.data(), byteCount);
     return true;
   }
@@ -208,13 +239,13 @@ int TCPClientSocket::Send(const void* bytes, size_t byteCount) {
     ErrorInterpreter("Socket is not initialized/connected", false);
     return 0;
   }
-  UpdateInterpreter("Sending message - " + std::to_string(byteCount) + " Bytes");
+  TrafficUpdate("Sending message - " + std::to_string(byteCount) + " Bytes");
   const int totalBytes = static_cast<int>(byteCount);
   const int sentBytes = SendAll(static_cast<const char*>(bytes), totalBytes);
   if(sentBytes != totalBytes) {
     ErrorInterpreter("Error sending message: ", true);
   } else {
-    UpdateInterpreter("Successfully sent message");
+    TrafficUpdate("Successfully sent message");
   }
   return sentBytes;
 }

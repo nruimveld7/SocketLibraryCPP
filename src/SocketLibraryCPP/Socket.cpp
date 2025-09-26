@@ -21,15 +21,15 @@ Socket::~Socket() noexcept {
 
 Socket::Socket(Socket&& other) noexcept
   : m_thisSocket(other.m_thisSocket),
-  m_service(other.m_service),
   m_name(std::move(other.m_name)),
-  m_ip(std::move(other.m_ip)),
-  m_portNum(other.m_portNum),
+  m_serverIP(std::move(other.m_serverIP)),
+  m_serverPort(other.m_serverPort),
   m_messageLength(other.m_messageLength.load(std::memory_order_relaxed)),
   m_wsaRegistered(other.m_wsaRegistered.load(std::memory_order_relaxed)),
   m_active(other.m_active.load(std::memory_order_relaxed)),
   m_configured(other.m_configured.load(std::memory_order_relaxed)),
-  m_closeAttempt(other.m_closeAttempt.load(std::memory_order_relaxed)) {
+  m_closeAttempt(other.m_closeAttempt.load(std::memory_order_relaxed)),
+  m_trafficUpdates(other.m_trafficUpdates.load(std::memory_order_relaxed)) {
   //Move callbacks under exclusive locks (deadlock-safe pair lock).
   {
     std::scoped_lock lock(m_errorHandlerMutex, other.m_errorHandlerMutex);
@@ -45,10 +45,9 @@ Socket::Socket(Socket&& other) noexcept
   other.m_active = false;
   other.m_configured = false;
   other.m_closeAttempt = false;
-  other.m_portNum = INVALID_PORT;
+  other.m_serverPort = INVALID_PORT;
   other.m_name.clear();
-  other.m_ip.clear();
-  std::memset(&other.m_service, 0, sizeof(other.m_service));
+  other.m_serverIP.clear();
 }
 
 Socket& Socket::operator=(Socket&& other) noexcept {
@@ -65,15 +64,15 @@ Socket& Socket::operator=(Socket&& other) noexcept {
       m_updateHandler = std::move(other.m_updateHandler);
     }
     //Steal scalar state.
-    m_service = other.m_service;
     m_name = std::move(other.m_name);
-    m_ip = std::move(other.m_ip);
-    m_portNum = other.m_portNum;
+    m_serverIP = std::move(other.m_serverIP);
+    m_serverPort = other.m_serverPort;
     m_messageLength = other.m_messageLength.load(std::memory_order_relaxed);
     m_wsaRegistered = other.m_wsaRegistered.load(std::memory_order_relaxed);
     m_active = other.m_active.load(std::memory_order_relaxed);
     m_configured = other.m_configured.load(std::memory_order_relaxed);
     m_closeAttempt = other.m_closeAttempt.load(std::memory_order_relaxed);
+    m_trafficUpdates = other.m_trafficUpdates.load(std::memory_order_relaxed);
     //Steal the handle last.
     m_thisSocket = other.m_thisSocket;
     //Invalidate source.
@@ -82,10 +81,9 @@ Socket& Socket::operator=(Socket&& other) noexcept {
     other.m_active = false;
     other.m_configured = false;
     other.m_closeAttempt = false;
-    other.m_portNum = INVALID_PORT;
+    other.m_serverPort = INVALID_PORT;
     other.m_name.clear();
-    other.m_ip.clear();
-    std::memset(&other.m_service, 0, sizeof(other.m_service));
+    other.m_serverIP.clear();
   }
   return *this;
 }
@@ -102,49 +100,69 @@ void Socket::SetUpdateHandler(std::function<void(const std::string& updateMessag
 }
 
 std::string Socket::GetName() const noexcept {
+  std::shared_lock lock(m_configMutex);
   return m_name;
 }
 
 bool Socket::SetName(const std::string& name) {
-  m_name = name;
+  std::unique_lock lock(m_configMutex);
+  m_name = std::move(name);
   return true;
 }
 
-std::string Socket::GetIP() const noexcept {
-	return m_ip;
+std::string Socket::GetServerIP() const noexcept {
+  std::shared_lock lock(m_configMutex);
+  return m_serverIP;
 }
 
-bool Socket::SetIP(const std::string& ip) {
-	if(inet_pton(AF_INET, ip.c_str(), &m_service.sin_addr) == 1) {
-		m_ip = ip;
-		UpdateInterpreter("Successfully set IP address: " + ip);
-		return true;
-	}
-	ErrorInterpreter("Error changing IP address", false);
-	return false;
+bool Socket::SetServerIP(const std::string& ip) {
+  IN_ADDR temp{};
+  if(::InetPtonA(AF_INET, ip.c_str(), &temp) != 1) {
+    ErrorInterpreter("Error changing IP address", false);
+  }
+  {
+    std::shared_lock lock(m_configMutex);
+    if(m_serverIP == ip) {
+      return true;
+    }
+  }
+  {
+    std::unique_lock lock(m_configMutex);
+    m_serverIP = ip;
+  }
+  UpdateInterpreter("Successfully set IP address: " + ip);
+  return true;
 }
 
-int Socket::GetPortNum() const noexcept {
-	return m_portNum;
+int Socket::GetServerPort() const noexcept {
+  std::shared_lock lock(m_configMutex);
+  return m_serverPort;
 }
 
-bool Socket::SetPortNum(int portNum) {
-	if(portNum > 0 && portNum <= 65535) {
-		m_portNum = portNum;
-		UpdateInterpreter("Successfully set port number: " + std::to_string(portNum));
-		return true;
-	}
-	ErrorInterpreter("Error: port number attempt '" + std::to_string(portNum) + "' is not valid (must be a number: 1-65535)", false);
-	return false;
+bool Socket::SetServerPort(int portNum) {
+  bool valid = false;
+  {
+    std::unique_lock lock(m_configMutex);
+    if(portNum > 0 && portNum <= 65535) {
+      m_serverPort = portNum;
+      valid = true;
+    }
+  }
+  if(!valid) {
+    ErrorInterpreter("Error: port number attempt '" + std::to_string(portNum) + "' is not valid (must be a number: 1-65535)", false);
+    return false;
+  }
+  UpdateInterpreter("Successfully set port number: " + std::to_string(portNum));
+  return true;
 }
 
-bool Socket::SetPortNum(const std::string& portNum) {
-	int portAttempt = 0;
-	if(!StringToInt(portNum, &portAttempt)) {
-		ErrorInterpreter("Error parsing port value from '" + portNum + "'", false);
-		return false;
-	}
-	return SetPortNum(portAttempt);
+bool Socket::SetServerPort(const std::string& portNum) {
+  int portAttempt = 0;
+  if(!StringToInt(portNum, portAttempt)) {
+    ErrorInterpreter("Error parsing port value from '" + portNum + "'", false);
+    return false;
+  }
+  return SetServerPort(portAttempt);
 }
 
 int Socket::GetMessageLength() const noexcept {
@@ -162,11 +180,19 @@ bool Socket::SetMessageLength(int messageLength) {
 
 bool Socket::SetMessageLength(const std::string& messageLength) {
 	int msgLenAttempt = 0;
-	if(!StringToInt(messageLength, &msgLenAttempt)) {
+	if(!StringToInt(messageLength, msgLenAttempt)) {
 		ErrorInterpreter("Error parsing message length value from '" + messageLength + "'", false);
 		return false;
 	}
 	return SetMessageLength(msgLenAttempt);
+}
+
+bool Socket::EnableTrafficUpdates() noexcept {
+  SetTrafficUpdates(true);
+}
+
+bool Socket::DisableTrafficUpdates() noexcept {
+  SetTrafficUpdates(false);
 }
 
 bool Socket::Close() {
@@ -193,28 +219,18 @@ bool Socket::CheckIP(const std::string& ip) noexcept {
 }
 
 bool Socket::CheckPort(int port) noexcept {
-	if(port > 0 && port <= 65535) {
-		return true;
-	}
-	return false;
+  return port > 1 && port <= 65535;
 }
 
 bool Socket::CheckPort(const std::string& port) {
-	int portAttempt = 0;
-	try {
-		size_t pos = 0;
-		int intAttempt = std::stoi(port, &pos);
-		if(pos == port.length()) {
-			portAttempt = intAttempt;
-			return CheckPort(portAttempt);
-		}
-	} catch(...) {
-		return false;
-	}
-	return false;
+  int portAttempt = 0;
+  if(!StringToInt(port, portAttempt)) {
+    return false;
+  }
+  return CheckPort(portAttempt);
 }
 
-Socket::Socket() : m_service() {
+Socket::Socket() {
   {
     std::unique_lock lock(m_errorHandlerMutex);
     m_errorHandler = nullptr;
@@ -225,47 +241,54 @@ Socket::Socket() : m_service() {
     m_updateHandler = nullptr;
   }
   m_thisSocket = INVALID_SOCKET;
-  m_ip = "127.0.0.1";
-  m_portNum = 55555;
+  m_serverIP = "127.0.0.1";
+  m_serverPort = 55555;
   SetRegistered(false);
   SetActive(false);
   SetConfigured(false);
   SetClosing(false);
+  SetTrafficUpdates(true);
   m_messageLength = 1000;
 }
 
-bool Socket::Initialize(int socketType) {
+bool Socket::GetServiceAddress(Protocol protocol, sockaddr_in& outAddress) {
+  std::string ip;
+  int port = 0;
+  {
+    std::shared_lock lock(m_configMutex);
+    ip = m_serverIP;
+    port = m_serverPort;
+  }
+  return ParseSocketAddress(ip, port, protocol, outAddress);
+}
+
+bool Socket::Initialize(Protocol protocol) {
 	if(!RegisterWSA()) {
 		ErrorInterpreter("Error initializing socket: failed to register WSA", false);
 		return false;
 	}
-	std::string typeName = "";
-	int protocol = -1;
-	if(socketType == SOCK_DGRAM) {
-		typeName = "UDP";
-		protocol = IPPROTO_UDP;
-	} else if(socketType == SOCK_STREAM) {
-		typeName = "TCP";
-		protocol = IPPROTO_TCP;
-  } else {
-    ErrorInterpreter("Error initializing socket: unrecognized socket type", false);
+  addrinfo hints{};
+  if(!GetHints(hints, protocol, AF_INET, 0)) {
+    ErrorInterpreter("Error initializing socket: unrecognized protocol", false);
     UnregisterWSA();
     return false;
   }
-	UpdateInterpreter("Initializing " + typeName + " socket " + m_ip + ":" + std::to_string(m_portNum));
-	m_thisSocket = socket(AF_INET, socketType, protocol);
-	if(m_thisSocket == INVALID_SOCKET) {
-		ErrorInterpreter("Error initializing socket: ", true);
-		UnregisterWSA();
-		return false;
-	}
-	m_service.sin_family = AF_INET;
-	if(inet_pton(AF_INET, m_ip.c_str(), &m_service.sin_addr) != 1) {
-		ErrorInterpreter("Error initializing socket: ", true);
-		UnregisterWSA();
-		return false;
-	}
-	m_service.sin_port = htons(m_portNum);
+  std::string ip;
+  int port = 0;
+  {
+    std::shared_lock lock(m_configMutex);
+    ip = m_serverIP;
+    port = m_serverPort;
+  }
+  const char* protoName = (protocol == Protocol::UDP ? "UDP" : "TCP");
+  UpdateInterpreter(std::string("Initializing") + protoName + " socket " + ip + ":" + std::to_string(port));
+  SOCKET socket = ::socket(hints.ai_family, hints.ai_socktype, hints.ai_protocol);
+  if(socket == INVALID_SOCKET) {
+    ErrorInterpreter("Error initializing socket: ", true);
+    UnregisterWSA();
+    return false;
+  }
+  m_thisSocket = socket;
 	UpdateInterpreter("Socket initialized successfully!");
 	return true;
 }
@@ -446,6 +469,21 @@ void Socket::SetClosing(bool closing) noexcept {
   m_closeAttempt.store(closing, std::memory_order_release);
 }
 
+bool Socket::TrafficUpdatesEnabled() const noexcept {
+  return m_trafficUpdates.load(std::memory_order_acquire);
+}
+
+void Socket::SetTrafficUpdates(bool trafficUpdates) noexcept {
+  m_trafficUpdates.store(trafficUpdates, std::memory_order_release);
+}
+
+void Socket::TrafficUpdate(const std::string& trafficMessage) {
+  if(!TrafficUpdatesEnabled()) {
+    return;
+  }
+  UpdateInterpreter(trafficMessage);
+}
+
 void Socket::ErrorInterpreter(const std::string& errorMessage, bool hasCode) {
   std::string message = errorMessage;
 	if(hasCode) {
@@ -571,39 +609,68 @@ std::string Socket::GetSocketIP(const sockaddr_in& addr) {
 	return std::string(ipStr);
 }
 
-bool Socket::ParseSocketAddress(const std::string& address, int socketType, sockaddr_in& out) {
-  auto delimiterPos = address.rfind(':');
+bool Socket::ParseSocketAddress(const std::string& address, Protocol protocol, sockaddr_in& out) {
+  const auto delimiterPos = address.rfind(':');
   if(delimiterPos == std::string::npos || delimiterPos == address.size() - 1) {
     return false;
   }
   const std::string ip = address.substr(0, delimiterPos);
   const std::string port = address.substr(delimiterPos + 1);
-  addrinfo hints = {};
-  hints.ai_family = AF_INET;
-  if(socketType == SOCK_DGRAM) {
-    hints.ai_socktype = SOCK_DGRAM;
-    hints.ai_protocol = IPPROTO_UDP;
-  } else if(socketType == SOCK_STREAM) {
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
-  } else {
+  return ParseSocketAddress(ip, port, protocol, out);
+}
+
+bool Socket::ParseSocketAddress(const std::string& ip, int port, Protocol protocol, sockaddr_in& out) {
+  const std::string portStr = std::to_string(port);
+  return ParseSocketAddress(ip, portStr, protocol, out);
+}
+
+bool Socket::ParseSocketAddress(const std::string& ip, const std::string& port, Protocol protocol, sockaddr_in& out) {
+  if(!CheckPort(port) || !CheckIP(ip)) {
     return false;
   }
+  addrinfo hints = {};
+  if(!GetHints(hints, protocol, AF_INET, 0)) {
+    return false;
+  }
+  hints.ai_flags |= AI_NUMERICSERV; //Port is numeric
+  IN_ADDR temp{};
+  if(InetPtonA(AF_INET, ip.c_str(), &temp) == 1) {
+    hints.ai_flags |= AI_NUMERICHOST; //IP is numeric
+  }
+
   addrinfo* result = nullptr;
-  const int error = getaddrinfo(ip.c_str(), port.c_str(), &hints, &result);
+  const int error = ::getaddrinfo(ip.c_str(), port.c_str(), &hints, &result);
   if(error != 0 || !result) {
     return false;
   }
-  bool found = false;
   for(addrinfo* addressInfo = result; addressInfo != nullptr; addressInfo = addressInfo->ai_next) {
-    if(addressInfo->ai_family == AF_INET) {
+    if(addressInfo->ai_family == AF_INET && addressInfo->ai_addrlen >= sizeof(sockaddr_in)) {
       std::memcpy(&out, addressInfo->ai_addr, sizeof(sockaddr_in));
-      found = true;
-      break;
+      ::freeaddrinfo(result);
+      return true;
     }
   }
-  freeaddrinfo(result);
-  return found;
+  ::freeaddrinfo(result);
+  return false;
+}
+
+bool Socket::GetHints(addrinfo& outHints, Protocol protocol, int family, int flags) noexcept {
+  outHints = {};
+  switch(protocol) {
+    case Protocol::UDP:
+      outHints.ai_socktype = SOCK_DGRAM;
+      outHints.ai_protocol = IPPROTO_UDP;
+      break;
+    case Protocol::TCP:
+      outHints.ai_socktype = SOCK_STREAM;
+      outHints.ai_protocol = IPPROTO_TCP;
+      break;
+    default:
+      return false;
+  }
+  outHints.ai_family = family;
+  outHints.ai_flags = flags;
+  return true;
 }
 
 int Socket::GetSocketPort(const SOCKET& socket) noexcept {
@@ -622,18 +689,19 @@ int Socket::GetSocketPort(const sockaddr_in& addr) noexcept {
 	return ntohs(addr.sin_port);
 }
 
-bool Socket::StringToInt(const std::string& convertToInt, int* outInt) {
-	try {
-		size_t pos = 0;
-		int intAttempt = std::stoi(convertToInt, &pos);
-		if(pos == convertToInt.length()) {
-			*outInt = intAttempt;
-			return true;
-		}
-  } catch(...) {
+bool Socket::StringToInt(const std::string& intStr, int& outInt) noexcept {
+  if(intStr.empty()) {
     return false;
   }
-	return false;
+  int value = 0;
+  const char* first = intStr.data();
+  const char* last = first + intStr.size();
+  auto [ptr, error] = std::from_chars(first, last, value, 10);
+  if(error != std::errc{} || ptr != last) {
+    return false;
+  }
+  outInt = value;
+  return true;
 }
 
 void Socket::FallbackLog(const char* msg) noexcept {

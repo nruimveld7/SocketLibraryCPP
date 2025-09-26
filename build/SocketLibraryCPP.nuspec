@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
   <metadata>
     <id>SocketLibraryCPP</id>
-    <version>1.1.2</version>
+    <version>1.2.0</version>
     <authors>Noah Ruimveld</authors>
     <owners>Noah Ruimveld</owners>
 
@@ -27,6 +27,7 @@
 
     <icon>SocketLibraryCPP.png</icon>
     <releaseNotes>
+      - 1.2.0: API cleanup, TCP socket refactoring, normalized destruction
       - 1.1.2: Update to NuGet package docs
       - 1.1.1: API cleanup, better errors, string overloads
     </releaseNotes>

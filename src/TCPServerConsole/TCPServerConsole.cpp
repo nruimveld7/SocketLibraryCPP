@@ -10,7 +10,7 @@
 #include "SocketLibrary.h"
 #include <Windows.h>
 
-void OnRead(unsigned char* message, int byteCount, SOCKET* sender);
+void OnRead(unsigned char* message, int byteCount, SOCKET sender);
 void UpdateHandler(std::string message);
 void ErrorHandler(std::string message);
 void PrintToConsole(const std::string& message);
@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
   }
 }
 
-void OnRead(unsigned char* message, int byteCount, SOCKET* sender) {
+void OnRead(unsigned char* message, int byteCount, SOCKET sender) {
   if(message == nullptr) {
     PrintToConsole("Invalid Message");
     return;
