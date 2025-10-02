@@ -60,8 +60,8 @@
     <file src="lib\SocketLibraryCPP\Win32\Release\SocketLibraryCPP.lib" target="build\native\lib\Win32\Release\" />
     <file src="lib\SocketLibraryCPP\Win32\**\*.pdb"                      target="build\native\lib\Win32\" />
 
-    <file src="build/README.md" target="docs\README.md" />
-    <file src="build/LICENSE"   target="LICENSE" />
+    <file src="build\assets\README.md" target="docs\README.md" />
+    <file src="build\assets\LICENSE"   target="LICENSE" />
     <file src="build\SocketLibraryCPP.png" target="SocketLibraryCPP.png" />
   </files>
 </package>
