@@ -183,9 +183,7 @@
     <ClInclude Include="..\..\include\SocketLibrary\TCPClientSocket.h">
       <Link>include\SocketLibrary\TCPClientSocket.h</Link>
     </ClInclude>
-    <ClInclude Include="..\..\include\SocketLibrary\TCPServerSocket.h">
-      <Link>include\SocketLibrary\TCPServerSocket.h</Link>
-    </ClInclude>
+    <ClInclude Include="..\..\include\SocketLibrary\TCPServerSocket.h" />
     <ClInclude Include="..\..\include\SocketLibrary\UDPClientSocket.h">
       <Link>include\SocketLibrary\UDPClientSocket.h</Link>
     </ClInclude>
