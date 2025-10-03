@@ -1,4 +1,4 @@
-# repoRoot\build\Package.ps1 (aka PackNuGet.ps1)
+# repoRoot\build\scripts\PackageNuGet.ps1
 # Package the NuGet .nupkg using existing built outputs. No building here.
 
 $ErrorActionPreference = 'Stop'
@@ -6,13 +6,14 @@ Set-StrictMode -Version Latest
 
 # -- Resolve paths relative to this script (works from any CWD) --
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-$RepoRoot  = Split-Path -Parent $ScriptDir
-$BuildDir  = $ScriptDir
-$LogsDir   = Join-Path $RepoRoot 'build\logs'
+$BuildDir  = Split-Path -Parent $ScriptDir
+$RepoRoot  = Split-Path -Parent $BuildDir
+$LogsDir   = Join-Path $BuildDir 'logs'
+$AssetsDir = Join-Path $BuildDir 'assets'
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 
 $ProjPath  = Join-Path $RepoRoot 'src\SocketLibraryCPP\SocketLibraryCPP.vcxproj'
-$Nuspec    = Join-Path $BuildDir 'SocketLibraryCPP.nuspec'
+$Nuspec    = Join-Path $AssetsDir 'SocketLibraryCPP.nuspec'
 $OutDir    = $BuildDir
 $LibStage  = Join-Path $RepoRoot 'lib\SocketLibraryCPP'
 
@@ -67,6 +68,7 @@ $RunLog   = Join-Path $LogsDir ("PackNuGet_{0}.log" -f $RunStamp)
 "PackNuGet run: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"           | Out-File -FilePath $RunLog -Append
 "RepoRoot : $RepoRoot"                                                 | Out-File -FilePath $RunLog -Append
 "BuildDir : $BuildDir"                                                 | Out-File -FilePath $RunLog -Append
+"AssetsDir : $AssetsDir"                                               | Out-File -FilePath $RunLog -Append
 "Nuspec  : $Nuspec"                                                    | Out-File -FilePath $RunLog -Append
 "nuget   : $NuGetExe"                                                  | Out-File -FilePath $RunLog -Append
 $pairList = ($pairs | ForEach-Object { "$($_.Configuration)|$($_.Platform)" }) -join ', '

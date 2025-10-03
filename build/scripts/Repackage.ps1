@@ -6,8 +6,8 @@ Set-StrictMode -Version Latest
 
 # Resolve paths relative to this script (works from any CWD)
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-$RepoRoot  = Split-Path -Parent $ScriptDir
-$BuildDir  = $ScriptDir
+$BuildDir  = Split-Path -Parent $ScriptDir
+$RepoRoot  = Split-Path -Parent $BuildDir
 
 # Pick a PowerShell engine (prefer pwsh; fallback to Windows PowerShell)
 $PSExe = $null
@@ -24,7 +24,7 @@ function RunStep {
   )
   $sep = '=' * 70
   Write-Host "`n$sep`n$Title`n$sep"
-  $scriptPath = Join-Path $BuildDir $ScriptName
+  $scriptPath = Join-Path $ScriptDir $ScriptName
   if (-not (Test-Path -LiteralPath $scriptPath)) {
     throw "Missing script: $scriptPath"
   }

@@ -62,6 +62,6 @@
 
     <file src="build\assets\README.md" target="docs\README.md" />
     <file src="build\assets\LICENSE"   target="LICENSE" />
-    <file src="build\SocketLibraryCPP.png" target="SocketLibraryCPP.png" />
+    <file src="build\assets\SocketLibraryCPP.png" target="SocketLibraryCPP.png" />
   </files>
 </package>
