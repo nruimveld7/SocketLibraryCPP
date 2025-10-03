@@ -6,6 +6,11 @@
         $(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
     </ClCompile>
+    <ClInclude>
+      <AdditionalIncludeDirectories>
+        $(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+    </ClInclude>
     <Link>
       <AdditionalLibraryDirectories>
         $(SocketLibraryCPP_LibDir);%(AdditionalLibraryDirectories)

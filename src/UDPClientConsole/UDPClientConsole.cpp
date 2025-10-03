@@ -10,6 +10,8 @@
 #include "SocketLibrary.h"
 #include <Windows.h>
 
+using namespace SocketLibrary;
+
 void OnRead(unsigned char* message, int byteCount, sockaddr_in sender);
 void UpdateHandler(std::string message);
 void ErrorHandler(std::string message);
@@ -261,12 +263,12 @@ void Configure() {
   client.SetOnRead(OnRead);
   while(true) {
     while(true) {
-      if(client.SetIP(GetConfig("GetIP"))) {
+      if(client.SetServerIP(GetConfig("GetIP"))) {
         break;
       }
     }
     while(true) {
-      if(client.SetPortNum(GetConfig("GetPort"))) {
+      if(client.SetServerPort(GetConfig("GetPort"))) {
         break;
       }
     }
