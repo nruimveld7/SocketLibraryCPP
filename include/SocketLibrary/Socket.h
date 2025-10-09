@@ -32,9 +32,12 @@ namespace SocketLibrary {
     bool SetMessageLength(int messageLength);
     bool SetMessageLength(const std::string& messageLength);
     void SetTrafficUpdates(bool trafficUpdates) noexcept;
-    virtual bool Open() = 0;
+    virtual bool Open();
     virtual bool Close();
-    bool GetActive() const noexcept;
+    bool IsIdle() const noexcept;
+    bool IsOpening() const noexcept;
+    bool IsActive() const noexcept;
+    bool IsClosing() const noexcept;
     static bool CheckIP(const std::string& ip) noexcept;
     static bool CheckPort(int port) noexcept;
     static bool CheckPort(const std::string& port);
@@ -52,10 +55,19 @@ namespace SocketLibrary {
       UDP,
       TCP
     };
+    enum class State : uint8_t {
+      Idle,
+      Opening,
+      Active,
+      Closing
+    };
     Socket();
     SOCKET GetSocket() const noexcept;
+    State GetState() const noexcept;
+    bool SetState(State newState);
     bool ReinitializeSocket(Protocol protocol, bool shutdown);
     bool GetServiceAddress(Protocol protocol, sockaddr_in& outAddress);
+    virtual bool Startup() = 0;
     virtual bool Cleanup() = 0;
     bool Initialize(Protocol protocol);
     bool RegisterWSA();
@@ -72,14 +84,10 @@ namespace SocketLibrary {
     bool CloseSocketSafe(SOCKET& socketToClose, bool shutDownSocket);
     bool CloseSocketSafe(std::atomic<SOCKET>& socketToClose, bool shutDownSocket);
     bool ShutDownSocket(SOCKET& socketToShutDown);
-    bool IsRegistered() const noexcept;
+    bool GetRegistered() const noexcept;
     void SetRegistered(bool registered) noexcept;
-    bool IsActive() const noexcept;
-    void SetActive(bool active) noexcept;
-    bool IsConfigured() const noexcept;
+    bool GetConfigured() const noexcept;
     void SetConfigured(bool configured) noexcept;
-    bool IsClosing() const noexcept;
-    void SetClosing(bool closing) noexcept;
     bool TrafficUpdatesEnabled() const noexcept;
     void TrafficUpdate(const std::string& trafficMessage);
     void ErrorInterpreter(const std::string& errorMessage, bool hasCode);
@@ -106,16 +114,16 @@ namespace SocketLibrary {
     static bool IsInitializedIPv4(const sockaddr_in& socketAddress) noexcept;
     static bool IsValidEndpointIPv4(const sockaddr_in& socketAddress) noexcept;
     static bool IsLimitedBroadcastIPv4(const in_addr& address) noexcept;
+
     std::atomic<SOCKET> m_thisSocket;
+    std::atomic<State> m_state;
     std::string m_name;
     std::string m_serverIP;
     int m_serverPort;
     mutable std::shared_mutex m_configMutex;
     std::atomic<int> m_messageLength;
     std::atomic<bool> m_wsaRegistered;
-    std::atomic<bool> m_active;
     std::atomic<bool> m_configured;
-    std::atomic<bool> m_closeAttempt;
     std::atomic<bool> m_trafficUpdates;
     std::function<void(const std::string& errorMessage)> m_errorHandler;
     std::shared_mutex m_errorHandlerMutex;

@@ -7,7 +7,6 @@
 namespace SocketLibrary {
   WorkerGroup::~WorkerGroup() noexcept {
     StopWorkers();
-    WaitForWorkers();
   }
 
   WorkerGroup::WorkerGroup(WorkerGroup&& other) noexcept {
@@ -20,7 +19,6 @@ namespace SocketLibrary {
   WorkerGroup& WorkerGroup::operator=(WorkerGroup&& other) noexcept {
     if(this != &other) {
       StopWorkers();
-      WaitForWorkers();
       std::scoped_lock locks(m_workersMutex, other.m_workersMutex);
       m_workers = std::move(other.m_workers);
       m_activeWorkers.store(other.m_activeWorkers.exchange(0, std::memory_order_acq_rel), std::memory_order_release);
@@ -61,7 +59,7 @@ namespace SocketLibrary {
     // 5) Track the handle
     {
       std::lock_guard lock(m_workersMutex);
-      m_workers.push_back(threadHandle);
+      m_workers.push_back(Worker{threadID, threadHandle});
     }
     if(outID) {
       *outID = threadID;
@@ -71,51 +69,42 @@ namespace SocketLibrary {
 
   void WorkerGroup::StopWorkers() noexcept {
     m_stop.store(true, std::memory_order_release);
+    WaitForWorkers();
   }
 
   bool WorkerGroup::StopRequested() const noexcept {
     return m_stop.load(std::memory_order_acquire);
   }
 
+  bool WorkerGroup::IsWorker() const noexcept {
+    const DWORD threadID = ::GetCurrentThreadId();
+    std::lock_guard lock(m_workersMutex);
+    for(const auto& worker : m_workers) {
+      if(worker.threadID == threadID) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool WorkerGroup::WaitForWorkers() noexcept {
-    std::vector<HANDLE> workers;
+    const DWORD threadID = ::GetCurrentThreadId();
+    const bool isWorker = IsWorker();
+    std::vector<HANDLE> handles;
     {
       std::lock_guard lock(m_workersMutex);
-      workers = std::move(m_workers);
-    }
-    if(workers.empty()) {
-      return true;
-    }
-    size_t index = 0;
-    while(true) {
-      const size_t totalWorkers = workers.size();
-      const size_t remainingWorkers = (index < totalWorkers ? totalWorkers - index : 0);
-      if(remainingWorkers == 0) {
-        break;
-      }
-      const size_t maximumObjects = static_cast<size_t>(MAXIMUM_WAIT_OBJECTS);
-      const size_t chunkCount = remainingWorkers > maximumObjects ? maximumObjects : remainingWorkers;
-      const DWORD result = ::WaitForMultipleObjects(
-        static_cast<DWORD>(chunkCount),
-        workers.data() + index,
-        TRUE, // wait for all in this chunk
-        INFINITE
-      );
-      if(result == WAIT_FAILED) {
-        for(size_t i = 0; i < chunkCount; ++i) {
-          HANDLE worker = workers[index + i];
-          if(worker) {
-            ::WaitForSingleObject(worker, INFINITE);
-          }
+      handles.reserve(m_workers.size());
+      for(const auto& worker : m_workers) {
+        if(isWorker && worker.threadID == threadID) {
+          continue;
+        }
+        if(worker.handle) {
+          handles.push_back(worker.handle);
         }
       }
-      index += chunkCount;
+      m_workers.clear();
     }
-    for(HANDLE worker : workers) {
-      if(worker) {
-        ::CloseHandle(worker);
-      }
-    }
+    WaitForHandles(handles);
     return m_activeWorkers.load(std::memory_order_acquire) == 0;
   }
 
@@ -140,5 +129,41 @@ namespace SocketLibrary {
       result = 0;
     }
     return result;
+  }
+
+  void WorkerGroup::WaitForHandles(const std::vector<HANDLE>& handles) {
+    if(handles.empty()) {
+      return;
+    }
+    size_t index = 0;
+    while(true) {
+      const size_t totalHandles = handles.size();
+      const size_t remainingHandles = (index < totalHandles ? totalHandles - index : 0);
+      if(remainingHandles == 0) {
+        break;
+      }
+      const size_t maximumObjects = static_cast<size_t>(MAXIMUM_WAIT_OBJECTS);
+      const size_t chunkCount = remainingHandles > maximumObjects ? maximumObjects : remainingHandles;
+      const DWORD result = ::WaitForMultipleObjects(
+        static_cast<DWORD>(chunkCount),
+        handles.data() + index,
+        TRUE, // wait for all in this chunk
+        INFINITE
+      );
+      if(result == WAIT_FAILED) {
+        for(size_t i = 0; i < chunkCount; ++i) {
+          HANDLE handle = handles[index + i];
+          if(handle) {
+            ::WaitForSingleObject(handle, INFINITE);
+          }
+        }
+      }
+      index += chunkCount;
+    }
+    for(HANDLE handle : handles) {
+      if(handle) {
+        ::CloseHandle(handle);
+      }
+    }
   }
 } //namespace SocketLibrary

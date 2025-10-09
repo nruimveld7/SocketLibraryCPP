@@ -5,7 +5,6 @@
 #include <vector>
 #include <functional>
 #include <shared_mutex>
-#include <unordered_set>
 #include <unordered_map>
 #include <cmath>
 #include <limits>
@@ -14,14 +13,15 @@
 #include <exception>
 #include <type_traits>
 #include "SocketLibrary/Socket.h"
+#include "SocketLibrary/ConnectionManager.h"
 
 namespace SocketLibrary {
   class TCPServerSocket : public Socket {
   public:
     TCPServerSocket();
     ~TCPServerSocket() noexcept override;
-    void SetOnClientDisconnect(std::function<void()> onClientDisconnect);
-    void SetOnRead(std::function<void(unsigned char* message, int byteCount, SOCKET sender)> onRead);
+    void SetOnClientDisconnect(std::function<void(const std::string& address)> onClientDisconnect);
+    void SetOnRead(std::function<void(unsigned char* message, size_t byteCount, SOCKET sender)> onRead);
     int GetListenBacklog() const noexcept;
     bool SetListenBacklog(int newSize);
     bool SetListenBacklog(const std::string& newSize);
@@ -114,12 +114,13 @@ namespace SocketLibrary {
       TCPServerSocket* serverSocket;
       SOCKET clientSocket;
     };
+    bool Startup() override;
+    bool Cleanup() override;
     bool ReadyToAccept() const noexcept;
     static unsigned __stdcall StaticAcceptConnection(void* arg) noexcept;
     void AcceptConnection();
     void RegisterClient(SOCKET socket);
     bool ApplySocketOptions(SOCKET socket) noexcept;
-    void UpdateConnectionBuckets(size_t desiredSize);
     static unsigned __stdcall StaticMessageHandler(void* arg) noexcept;
     void MessageHandler(SOCKET acceptSocket);
     void Broadcast(const void* bytes, size_t byteCount);
@@ -129,21 +130,18 @@ namespace SocketLibrary {
     int Send(const void* bytes, size_t byteCount);
     int Send(const void* bytes, size_t byteCount, SOCKET target);
     int SendAll(SOCKET socket, const char* buffer, int bufferSize);
-    bool Cleanup() override;
     bool CloseClientSocket(SOCKET clientSocket);
-    void OnClientDisconnect();
-    void OnRead(unsigned char* message, int byteCount, SOCKET sender);
-    std::unordered_set<SOCKET> m_connections;
-    std::unordered_map<std::string, SOCKET> m_addressToSocket;
-    std::unordered_map<SOCKET, std::string> m_socketToAddress;
+    void OnClientDisconnect(const std::string& address);
+    void OnRead(unsigned char* message, size_t byteCount, SOCKET sender);
+    ConnectionManager m_connections;
     mutable std::shared_mutex m_connectionsMutex;
     std::atomic<int> m_listenBacklog;
     std::atomic<int> m_maxConnections;
     SocketOptions m_socketOptions;
     std::shared_mutex m_socketOptionsMutex;
-    std::function<void()> m_onClientDisconnect;
+    std::function<void(const std::string& address)> m_onClientDisconnect;
     std::shared_mutex m_onClientDisconnectMutex;
-    std::function<void(unsigned char* message, int byteCount, SOCKET sender)> m_onRead;
+    std::function<void(unsigned char* message, size_t byteCount, SOCKET sender)> m_onRead;
     std::shared_mutex m_onReadMutex;
   };
 } //namespace SocketLibrary

@@ -177,6 +177,7 @@
     <ClInclude Include="..\..\include\SocketLibrary.h">
       <Link>include\SocketLibrary.h</Link>
     </ClInclude>
+    <ClInclude Include="..\..\include\SocketLibrary\ConnectionManager.h" />
     <ClInclude Include="..\..\include\SocketLibrary\Socket.h">
       <Link>include\SocketLibrary\Socket.h</Link>
     </ClInclude>
@@ -197,6 +198,7 @@
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ConnectionManager.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

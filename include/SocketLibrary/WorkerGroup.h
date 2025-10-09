@@ -24,6 +24,7 @@ namespace SocketLibrary {
     void StopWorkers() noexcept;
     bool StopRequested() const noexcept;
     bool WaitForWorkers() noexcept;
+    bool IsWorker() const noexcept;
     int ActiveWorkerCount() const noexcept;
 
   private:
@@ -32,9 +33,14 @@ namespace SocketLibrary {
       unsigned(__stdcall* fn)(void*);
       void* context;
     };
+    struct Worker {
+      DWORD threadID;
+      HANDLE handle;
+    };
     static unsigned __stdcall WorkerEntryPoint(void* params) noexcept;
-    std::mutex m_workersMutex;
-    std::vector<HANDLE> m_workers;
+    static void WaitForHandles(const std::vector<HANDLE>& handles);
+    mutable std::mutex m_workersMutex;
+    std::vector<Worker> m_workers;
     std::atomic<int> m_activeWorkers{0};
     std::atomic<bool> m_stop{false};
   };

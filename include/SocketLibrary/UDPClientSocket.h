@@ -12,7 +12,7 @@ namespace SocketLibrary {
   public:
     UDPClientSocket();
     ~UDPClientSocket() noexcept override;
-    void SetOnRead(std::function<void(unsigned char* message, int byteCount, sockaddr_in sender)> onRead);
+    void SetOnRead(std::function<void(unsigned char* message, size_t byteCount, sockaddr_in sender)> onRead);
     bool Open();
     bool Close();
 
@@ -77,6 +77,8 @@ namespace SocketLibrary {
     }
 
   private:
+    bool Startup() override;
+    bool Cleanup() override;
     static unsigned __stdcall StaticMessageHandler(void* arg) noexcept;
     void MessageHandler();
     int Send(const void* bytes, size_t byteCount, const std::string& targetIP, const std::string& targetPort);
@@ -85,11 +87,10 @@ namespace SocketLibrary {
     int Send(const void* bytes, size_t byteCount, const sockaddr_in& target);
     int Send(const void* bytes, size_t byteCount);
     int SendAll(sockaddr_in socket, const char* data, int total);
-    bool Cleanup() override;
-    void OnRead(unsigned char* message, int byteCount, sockaddr_in sender);
+    void OnRead(unsigned char* message, size_t byteCount, sockaddr_in sender);
     sockaddr_in m_target;
     mutable std::shared_mutex m_targetMutex;
-    std::function<void(unsigned char* message, int byteCount, sockaddr_in sender)> m_onRead;
+    std::function<void(unsigned char* message, size_t byteCount, sockaddr_in sender)> m_onRead;
     std::shared_mutex m_onReadMutex;
   };
 } //namespace SocketLibrary

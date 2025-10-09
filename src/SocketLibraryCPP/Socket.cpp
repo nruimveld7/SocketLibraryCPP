@@ -8,7 +8,6 @@ namespace SocketLibrary {
 
   Socket::~Socket() noexcept {
     m_workers.StopWorkers();
-    m_workers.WaitForWorkers();
     {
       std::unique_lock lock(m_errorHandlerMutex);
       m_errorHandler = nullptr;
@@ -22,16 +21,13 @@ namespace SocketLibrary {
 
   Socket::Socket(Socket&& other) noexcept
     : m_thisSocket(other.m_thisSocket.exchange(INVALID_SOCKET, std::memory_order_acq_rel)),
-    m_name(std::move(other.m_name)),
-    m_serverIP(std::move(other.m_serverIP)),
-    m_serverPort(other.m_serverPort),
+    m_state(other.m_state.load(std::memory_order_acquire)),
     m_messageLength(other.m_messageLength.load(std::memory_order_relaxed)),
     m_wsaRegistered(other.m_wsaRegistered.load(std::memory_order_relaxed)),
-    m_active(other.m_active.load(std::memory_order_relaxed)),
     m_configured(other.m_configured.load(std::memory_order_relaxed)),
-    m_closeAttempt(other.m_closeAttempt.load(std::memory_order_relaxed)),
-    m_trafficUpdates(other.m_trafficUpdates.load(std::memory_order_relaxed)) {
-    //Move callbacks under exclusive locks (deadlock-safe pair lock).
+    m_trafficUpdates(other.m_trafficUpdates.load(std::memory_order_relaxed)),
+    m_workers(std::move(other.m_workers)) {
+      //Move protected members under exclusive locks
       {
         std::scoped_lock lock(m_errorHandlerMutex, other.m_errorHandlerMutex);
         m_errorHandler = std::move(other.m_errorHandler);
@@ -40,21 +36,27 @@ namespace SocketLibrary {
         std::scoped_lock lock(m_updateHandlerMutex, other.m_updateHandlerMutex);
         m_updateHandler = std::move(other.m_updateHandler);
       }
-      // Invalidate source.
+      {
+        //std::scoped_lock lock(m_configMutex, other.m_configMutex);
+        m_name = std::move(other.m_name);
+        m_serverIP = std::move(other.m_serverIP);
+        m_serverPort = other.m_serverPort;
+        other.m_name.clear();
+        other.m_serverIP.clear();
+        other.m_serverPort = INVALID_PORT;
+      }
+      // Invalidate source
+      other.m_state.store(State::Idle, std::memory_order_relaxed);
       other.m_wsaRegistered = false;
-      other.m_active = false;
       other.m_configured = false;
-      other.m_closeAttempt = false;
-      other.m_serverPort = INVALID_PORT;
-      other.m_name.clear();
-      other.m_serverIP.clear();
+      m_errorHandlerFaulted.store(other.m_errorHandlerFaulted.exchange(true, std::memory_order_acq_rel), std::memory_order_release);
   }
 
   Socket& Socket::operator=(Socket&& other) noexcept {
     if(this != &other) {
-      // Release current resource (safe even if INVALID_SOCKET).
+      //Release current resource (safe even if INVALID_SOCKET)
       CloseSocketSafe(m_thisSocket, true);
-      //Move callbacks first (deadlock-safe pair lock).
+      //Move members - protected members first
       {
         std::scoped_lock lock(m_errorHandlerMutex, other.m_errorHandlerMutex);
         m_errorHandler = std::move(other.m_errorHandler);
@@ -63,26 +65,25 @@ namespace SocketLibrary {
         std::scoped_lock lock(m_updateHandlerMutex, other.m_updateHandlerMutex);
         m_updateHandler = std::move(other.m_updateHandler);
       }
-      //Steal scalar state.
-      m_name = std::move(other.m_name);
-      m_serverIP = std::move(other.m_serverIP);
-      m_serverPort = other.m_serverPort;
+      {
+        //std::scoped_lock lock(m_configMutex, other.m_configMutex);
+        m_name = std::move(other.m_name);
+        m_serverIP = std::move(other.m_serverIP);
+        m_serverPort = other.m_serverPort;
+        other.m_name.clear();
+        other.m_serverIP.clear();
+        other.m_serverPort = INVALID_PORT;
+      }
+      m_state.store(other.m_state.load(std::memory_order_acquire), std::memory_order_release);
+      m_errorHandlerFaulted.store(other.m_errorHandlerFaulted.exchange(true, std::memory_order_acq_rel), std::memory_order_release);
       m_messageLength = other.m_messageLength.load(std::memory_order_relaxed);
       m_wsaRegistered = other.m_wsaRegistered.load(std::memory_order_relaxed);
-      m_active = other.m_active.load(std::memory_order_relaxed);
       m_configured = other.m_configured.load(std::memory_order_relaxed);
-      m_closeAttempt = other.m_closeAttempt.load(std::memory_order_relaxed);
       m_trafficUpdates = other.m_trafficUpdates.load(std::memory_order_relaxed);
-      //Steal the handle last.
       m_thisSocket.store(other.m_thisSocket.exchange(INVALID_SOCKET, std::memory_order_acq_rel), std::memory_order_release);
-      //Invalidate source.
+      //Invalidate source
       other.m_wsaRegistered = false;
-      other.m_active = false;
       other.m_configured = false;
-      other.m_closeAttempt = false;
-      other.m_serverPort = INVALID_PORT;
-      other.m_name.clear();
-      other.m_serverIP.clear();
     }
     return *this;
   }
@@ -104,7 +105,7 @@ namespace SocketLibrary {
   }
 
   bool Socket::SetName(const std::string& name) {
-    std::unique_lock<std::shared_mutex> lock(m_configMutex);
+    std::unique_lock lock(m_configMutex);
     m_name = name;
     return true;
   }
@@ -181,23 +182,53 @@ namespace SocketLibrary {
     m_trafficUpdates.store(trafficUpdates, std::memory_order_release);
   }
 
+  bool Socket::Open() {
+    if(!IsIdle()) {
+      return false;
+    }
+    if(!SetState(State::Opening)) {
+      return false;
+    }
+    const bool started = Startup();
+    if(!started) {
+      Close();
+    }
+    return started;
+  }
+
   bool Socket::Close() {
+    if(IsIdle()) {
+      return true;
+    }
     if(IsClosing()) {
       return true;
     }
-    SetClosing(true);
-    SetActive(false);
+    if(!SetState(State::Closing)) {
+      return false;
+    }
     const bool socketClosed = CloseSocketSafe(m_thisSocket, true);
     const bool cleaned = Cleanup();
     m_workers.StopWorkers();
-    m_workers.WaitForWorkers();
     SetConfigured(false);
     const bool wsaUnregistered = UnregisterWSA();
+    SetState(State::Idle);
     return socketClosed && cleaned && wsaUnregistered;
   }
 
-  bool Socket::GetActive() const noexcept {
-    return IsActive();
+  bool Socket::IsIdle() const noexcept {
+    return m_state.load(std::memory_order_acquire) == State::Idle;
+  }
+
+  bool Socket::IsOpening() const noexcept {
+    return m_state.load(std::memory_order_acquire) == State::Opening;
+  }
+
+  bool Socket::IsActive() const noexcept {
+    return m_state.load(std::memory_order_acquire) == State::Active;
+  }
+
+  bool Socket::IsClosing() const noexcept {
+    return m_state.load(std::memory_order_acquire) == State::Closing;
   }
 
   bool Socket::CheckIP(const std::string& ip) noexcept {
@@ -230,16 +261,51 @@ namespace SocketLibrary {
     m_thisSocket.store(INVALID_SOCKET, std::memory_order_relaxed);
     m_serverIP = "127.0.0.1";
     m_serverPort = 55555;
+    SetState(State::Idle);
     SetRegistered(false);
-    SetActive(false);
     SetConfigured(false);
-    SetClosing(false);
     SetTrafficUpdates(true);
     m_messageLength = 1000;
   }
 
   SOCKET Socket::GetSocket() const noexcept {
     return m_thisSocket.load(std::memory_order_acquire);
+  }
+
+  Socket::State Socket::GetState() const noexcept {
+    return m_state.load(std::memory_order_acquire);
+  }
+
+  bool Socket::SetState(State newState) {
+    State currentState = GetState();
+    while(true) {
+      if(currentState == newState) {
+        return true;
+      }
+      bool valid = false;
+      switch(newState) {
+        case State::Idle:
+          valid = (currentState == State::Closing);
+          break;
+        case State::Opening:
+          valid = (currentState == State::Idle);
+          break;
+        case State::Active:
+          valid = (currentState == State::Opening);
+          break;
+        case State::Closing:
+          valid = true;
+          break;
+        default:
+          break;
+      }
+      if(!valid) {
+        return false;
+      }
+      if(m_state.compare_exchange_weak(currentState, newState, std::memory_order_release, std::memory_order_acquire)) {
+        return true;
+      }
+    }
   }
 
   bool Socket::ReinitializeSocket(Protocol protocol, bool shutdown) {
@@ -271,7 +337,6 @@ namespace SocketLibrary {
 
   bool Socket::Initialize(Protocol protocol) {
     m_workers.StopWorkers();
-    m_workers.WaitForWorkers();
     m_workers = WorkerGroup{};
     if(!RegisterWSA()) {
       ErrorInterpreter("Error initializing socket: failed to register WSA", false);
@@ -291,7 +356,7 @@ namespace SocketLibrary {
       port = m_serverPort;
     }
     const char* protoName = (protocol == Protocol::UDP ? "UDP" : "TCP");
-    UpdateInterpreter(std::string("Initializing") + protoName + " socket " + ip + ":" + std::to_string(port));
+    UpdateInterpreter(std::string("Initializing ") + protoName + " socket " + ip + ":" + std::to_string(port));
     SOCKET socket = ::socket(hints.ai_family, hints.ai_socktype, hints.ai_protocol);
     if(socket == INVALID_SOCKET) {
       ErrorInterpreter("Error initializing socket: ", true);
@@ -299,13 +364,12 @@ namespace SocketLibrary {
       return false;
     }
     m_thisSocket.store(socket, std::memory_order_release);
-    SetClosing(false);
     UpdateInterpreter("Socket initialized successfully!");
     return true;
   }
 
   bool Socket::RegisterWSA() {
-    if(IsRegistered()) {
+    if(GetRegistered()) {
       UpdateInterpreter("WSA already registered");
       return true;
     }
@@ -365,7 +429,7 @@ namespace SocketLibrary {
   }
 
   bool Socket::UnregisterWSA() {
-    if(!IsRegistered()) {
+    if(!GetRegistered()) {
       UpdateInterpreter("WSA never registered for this socket");
       return true;
     }
@@ -373,12 +437,11 @@ namespace SocketLibrary {
     std::string msg = "";
     {
       std::scoped_lock lock(s_wsaMutex);
-      if(!IsRegistered()) {
+      if(!GetRegistered()) {
         msg = "WSA already unregistered for this socket";
       } else {
         SetRegistered(false);
         SetConfigured(false);
-        SetActive(false);
         if(s_wsaRefCount > 0) {
           --s_wsaRefCount;
           if(s_wsaRefCount == 0) {
@@ -446,7 +509,7 @@ namespace SocketLibrary {
     }
   }
 
-  bool Socket::IsRegistered() const noexcept {
+  bool Socket::GetRegistered() const noexcept {
     return m_wsaRegistered.load(std::memory_order_acquire);
   }
 
@@ -454,28 +517,12 @@ namespace SocketLibrary {
     m_wsaRegistered.store(registered, std::memory_order_release);
   }
 
-  bool Socket::IsActive() const noexcept {
-    return m_active.load(std::memory_order_acquire);
-  }
-
-  void Socket::SetActive(bool active) noexcept {
-    m_active.store(active, std::memory_order_release);
-  }
-
-  bool Socket::IsConfigured() const noexcept {
+  bool Socket::GetConfigured() const noexcept {
     return m_configured.load(std::memory_order_acquire);
   }
 
   void Socket::SetConfigured(bool configured) noexcept {
     m_configured.store(configured, std::memory_order_release);
-  }
-
-  bool Socket::IsClosing() const noexcept {
-    return m_closeAttempt.load(std::memory_order_acquire);
-  }
-
-  void Socket::SetClosing(bool closing) noexcept {
-    m_closeAttempt.store(closing, std::memory_order_release);
   }
 
   bool Socket::TrafficUpdatesEnabled() const noexcept {

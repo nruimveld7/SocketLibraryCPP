@@ -34,7 +34,7 @@ namespace SocketLibrary {
     m_onDisconnect = std::move(onDisconnect);
   }
 
-  void TCPClientSocket::SetOnRead(std::function<void(unsigned char* message, int byteCount)> onRead) {
+  void TCPClientSocket::SetOnRead(std::function<void(unsigned char* message, size_t byteCount)> onRead) {
     std::unique_lock lock(m_onReadMutex);
     m_onRead = std::move(onRead);
   }
@@ -77,42 +77,49 @@ namespace SocketLibrary {
   }
 
   bool TCPClientSocket::Open() {
-    //1) Create the TCP socket
-    SetCancelling(false);
-    if(!Initialize(Protocol::TCP)) {
-      ErrorInterpreter("Error initializing socket", false);
-      Close();
-      return false;
-    }
-    SOCKET thisSocket = GetSocket();
-    if(thisSocket == INVALID_SOCKET) {
-      ErrorInterpreter("Socket no longer initialized", false);
-      Close();
-      return false;
-    }
-    //2) Attempt to connect to server socket
-    SetConfigured(true);
-    SetClosing(false);
-    UpdateInterpreter("Ready to connect");
-    if(!StartWorker(&TCPClientSocket::StaticConnectionHandler, this)) {
-      ErrorInterpreter("Thread creation error: ", true);
-      Close();
-      return false;
-    }
-    return true;
+    return Socket::Open();
   }
 
   bool TCPClientSocket::Close() {
     return Socket::Close();
   }
 
-  bool TCPClientSocket::ReadyToConnect() const noexcept {
-    const bool configured = IsConfigured();
-    const bool registered = IsRegistered();
-    const bool connected = IsConnected();
-    const bool closing = IsClosing();
+  bool TCPClientSocket::Startup() {
+    //1) Create the TCP socket
+    SetCancelling(false);
+    if(!Initialize(Protocol::TCP)) {
+      ErrorInterpreter("Error initializing socket", false);
+      return false;
+    }
     SOCKET thisSocket = GetSocket();
-    return !connected && configured && registered && !closing && thisSocket != INVALID_SOCKET;
+    if(thisSocket == INVALID_SOCKET) {
+      ErrorInterpreter("Socket no longer initialized", false);
+      return false;
+    }
+    //2) Attempt to connect to server socket
+    SetConfigured(true);
+    UpdateInterpreter("Ready to connect");
+    if(!StartWorker(&TCPClientSocket::StaticConnectionHandler, this)) {
+      ErrorInterpreter("Thread creation error: ", true);
+      return false;
+    }
+    return true;
+  }
+
+  bool TCPClientSocket::Cleanup() {
+    SetCancelling(true);
+    SetConnecting(false);
+    OnDisconnect();
+    return true;
+  }
+
+  bool TCPClientSocket::ReadyToConnect() const noexcept {
+    const bool configured = GetConfigured();
+    const bool registered = GetRegistered();
+    const bool connected = IsConnected();
+    const bool active = IsActive();
+    SOCKET thisSocket = GetSocket();
+    return !connected && configured && registered && active && thisSocket != INVALID_SOCKET;
   }
 
   unsigned __stdcall TCPClientSocket::StaticConnectionHandler(void* arg) noexcept {
@@ -124,10 +131,13 @@ namespace SocketLibrary {
   }
 
   void TCPClientSocket::ConnectionHandler() {
+    if(!SetState(State::Active)) {
+      Close();
+    }
     const std::chrono::milliseconds minBackoff{100};
     const std::chrono::milliseconds maxBackoff{5000};
     std::chrono::milliseconds backoff = minBackoff;
-    while(true) {
+    while(IsActive()) {
       if(StopRequested() || IsCancelling()) {
         break;
       }
@@ -186,7 +196,6 @@ namespace SocketLibrary {
       //3) Attempt connect using the freshly loaded handle
       if(::connect(thisSocket, reinterpret_cast<SOCKADDR*>(&address), addressSize) != SOCKET_ERROR) {
         SetConnected(true);
-        SetActive(true);
         SetConnecting(false);
         UpdateInterpreter("Client connected!");
         return true;
@@ -196,7 +205,6 @@ namespace SocketLibrary {
       if(error == WSAEISCONN) {
         //Already connected
         SetConnected(true);
-        SetActive(true);
         SetConnecting(false);
         return true;
       }
@@ -236,7 +244,7 @@ namespace SocketLibrary {
       const int byteCount = ::recv(thisSocket, reinterpret_cast<char*>(buffer.data()), messageLength, 0);
       if(byteCount > 0) {
         TrafficUpdate("Received " + std::to_string(byteCount) + " bytes from " + GetPeerAddress(thisSocket));
-        OnRead(buffer.data(), byteCount);
+        OnRead(buffer.data(), static_cast<size_t>(byteCount));
         continue;
       }
       if(byteCount == 0) {
@@ -266,7 +274,7 @@ namespace SocketLibrary {
       return 0;
     }
     SOCKET thisSocket = GetSocket();
-    if(!(IsConfigured() && IsRegistered() && IsConnected() && thisSocket != INVALID_SOCKET)) {
+    if(!(GetConfigured() && GetRegistered() && IsConnected() && thisSocket != INVALID_SOCKET)) {
       ErrorInterpreter("Socket is not initialized/connected", false);
       return 0;
     }
@@ -321,13 +329,6 @@ namespace SocketLibrary {
     m_connecting.store(connecting, std::memory_order_release);
   }
 
-  bool TCPClientSocket::Cleanup() {
-    SetCancelling(true);
-    SetConnecting(false);
-    OnDisconnect();
-    return true;
-  }
-
   void TCPClientSocket::OnDisconnect() {
     const bool wasConnected = m_connected.exchange(false, std::memory_order_acq_rel);
     if(!wasConnected) {
@@ -351,8 +352,8 @@ namespace SocketLibrary {
     }
   }
 
-  void TCPClientSocket::OnRead(unsigned char* message, int byteCount) {
-    std::function<void(unsigned char* message, int byteCount)> callback;
+  void TCPClientSocket::OnRead(unsigned char* message, size_t byteCount) {
+    std::function<void(unsigned char* message, size_t byteCount)> callback;
     {
       std::shared_lock lock(m_onReadMutex);
       callback = m_onRead;

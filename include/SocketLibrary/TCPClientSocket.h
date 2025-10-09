@@ -14,7 +14,7 @@ namespace SocketLibrary {
     TCPClientSocket();
     ~TCPClientSocket() noexcept override;
     void SetOnDisconnect(std::function<void()> onDisconnect);
-    void SetOnRead(std::function<void(unsigned char* message, int byteCount)> onRead);
+    void SetOnRead(std::function<void(unsigned char* message, size_t byteCount)> onRead);
     int GetConnectionDelay() const noexcept;
     bool SetConnectionDelay(int newDelay);
     bool SetConnectionDelay(const std::string& newDelay);
@@ -37,6 +37,8 @@ namespace SocketLibrary {
     }
 
   private:
+    bool Startup() override;
+    bool Cleanup() override;
     bool ReadyToConnect() const noexcept;
     static unsigned __stdcall StaticConnectionHandler(void* arg) noexcept;
     void ConnectionHandler();
@@ -47,16 +49,15 @@ namespace SocketLibrary {
     void SetConnected(bool connected) noexcept;
     void SetCancelling(bool cancelling) noexcept;
     void SetConnecting(bool connecting) noexcept;
-    bool Cleanup() override;
     void OnDisconnect();
-    void OnRead(unsigned char* message, int byteCount);
+    void OnRead(unsigned char* message, size_t byteCount);
     std::atomic<int> m_connectionDelay;
     std::atomic<bool> m_connected;
     std::atomic<bool> m_cancelConnect;
     std::atomic<bool> m_connecting;
     std::function<void()> m_onDisconnect;
     std::shared_mutex m_onDisconnectMutex;
-    std::function<void(unsigned char* message, int byteCount)> m_onRead;
+    std::function<void(unsigned char* message, size_t byteCount)> m_onRead;
     std::shared_mutex m_onReadMutex;
   };
 } //namespace SocketLibrary

@@ -18,7 +18,7 @@ namespace SocketLibrary {
     }
   }
 
-  void UDPServerSocket::SetOnRead(std::function<void(unsigned char* message, int byteCount, sockaddr_in sender)> onRead) {
+  void UDPServerSocket::SetOnRead(std::function<void(unsigned char* message, size_t byteCount, sockaddr_in sender)> onRead) {
     {
       std::unique_lock lock(m_onReadMutex);
       m_onRead = std::move(onRead);
@@ -26,16 +26,22 @@ namespace SocketLibrary {
   }
 
   bool UDPServerSocket::Open() {
+    return Socket::Open();
+  }
+
+  bool UDPServerSocket::Close() {
+    return Socket::Close();
+  }
+
+  bool UDPServerSocket::Startup() {
     //1) Create UDP socket
     if(!Initialize(Protocol::UDP)) {
       ErrorInterpreter("Error initializing socket", false);
-      Close();
       return false;
     }
     SOCKET thisSocket = GetSocket();
     if(thisSocket == INVALID_SOCKET) {
       ErrorInterpreter("Socket no longer initialized", false);
-      Close();
       return false;
     }
     //2) Apply socket options
@@ -48,7 +54,6 @@ namespace SocketLibrary {
       sizeof(option)
     ) == SOCKET_ERROR) {
       ErrorInterpreter("Error enabling broadcasting: ", true);
-      Close();
       return false;
     }
     DWORD bytesReturned = 0;
@@ -70,12 +75,10 @@ namespace SocketLibrary {
     int bindLength = sizeof(bindAddress);
     if(!GetServiceAddress(Protocol::UDP, bindAddress)) {
       ErrorInterpreter("Invalid server IP/Port", false);
-      Close();
       return false;
     }
     if(::bind(thisSocket, reinterpret_cast<const sockaddr*>(&bindAddress), bindLength) == SOCKET_ERROR) {
       ErrorInterpreter("Socket binding error: ", true);
-      Close();
       return false;
     }
     UpdateInterpreter("Binding successful!");
@@ -91,15 +94,14 @@ namespace SocketLibrary {
     UpdateInterpreter("Preparing to listen for messages");
     if(!StartWorker(&UDPServerSocket::StaticMessageHandler, this)) {
       ErrorInterpreter("Thread creation error: ", true);
-      Close();
       return false;
     }
     UpdateInterpreter("Ready to send messages");
     return true;
   }
 
-  bool UDPServerSocket::Close() {
-    return Socket::Close();
+  bool UDPServerSocket::Cleanup() {
+    return true;
   }
 
   unsigned __stdcall UDPServerSocket::StaticMessageHandler(void* arg) noexcept {
@@ -111,7 +113,9 @@ namespace SocketLibrary {
   }
 
   void UDPServerSocket::MessageHandler() {
-    SetActive(true);
+    if(!SetState(State::Active)) {
+      Close();
+    }
     int lastMessageLength = -1;
     std::vector<unsigned char> buffer;
     SOCKET thisSocket = INVALID_SOCKET;
@@ -145,7 +149,7 @@ namespace SocketLibrary {
       }
       if(byteCount >= 0) {
         TrafficUpdate("Received " + std::to_string(byteCount) + " bytes");
-        OnRead(buffer.data(), byteCount, clientAddr);
+        OnRead(buffer.data(), static_cast<size_t>(byteCount), clientAddr);
         continue;
       }
       const int error = ::WSAGetLastError();
@@ -158,7 +162,6 @@ namespace SocketLibrary {
       ErrorInterpreter("Socket error: ", true);
       break;
     }
-    SetActive(false);
   }
 
   int UDPServerSocket::Broadcast(const void* bytes, size_t byteCount) {
@@ -180,7 +183,7 @@ namespace SocketLibrary {
       return 0;
     }
     SOCKET thisSocket = GetSocket();
-    if(!(IsConfigured() && IsRegistered() && thisSocket != INVALID_SOCKET)) {
+    if(!(GetConfigured() && GetRegistered() && thisSocket != INVALID_SOCKET)) {
       ErrorInterpreter("Send error: socket is not initialized/bound", false);
       return 0;
     }
@@ -242,7 +245,7 @@ namespace SocketLibrary {
       return 0;
     }
     SOCKET thisSocket = GetSocket();
-    if(!(IsConfigured() && IsRegistered() && thisSocket != INVALID_SOCKET)) {
+    if(!(GetConfigured() && GetRegistered() && thisSocket != INVALID_SOCKET)) {
       ErrorInterpreter("Send error: socket is not initialized/connected", false);
       return 0;
     }
@@ -298,12 +301,8 @@ namespace SocketLibrary {
     return totalSent;
   }
 
-  bool UDPServerSocket::Cleanup() {
-    return true;
-  }
-
-  void UDPServerSocket::OnRead(unsigned char* message, int byteCount, sockaddr_in sender) {
-    std::function<void(unsigned char* message, int byteCount, sockaddr_in sender)> callback;
+  void UDPServerSocket::OnRead(unsigned char* message, size_t byteCount, sockaddr_in sender) {
+    std::function<void(unsigned char* message, size_t byteCount, sockaddr_in sender)> callback;
     {
       std::shared_lock lock(m_onReadMutex);
       callback = m_onRead;
