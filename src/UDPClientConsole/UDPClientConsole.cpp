@@ -12,7 +12,7 @@
 
 using namespace SocketLibrary;
 
-void OnRead(unsigned char* message, int byteCount, sockaddr_in sender);
+void OnRead(unsigned char* message, size_t byteCount, sockaddr_in sender);
 void UpdateHandler(std::string message);
 void ErrorHandler(std::string message);
 void PrintToConsole(const std::string& message);
@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
   }
 }
 
-void OnRead(unsigned char* message, int byteCount, sockaddr_in sender) {
+void OnRead(unsigned char* message, size_t byteCount, sockaddr_in sender) {
   if(message == nullptr) {
     PrintToConsole("Invalid Message");
     return;
@@ -269,11 +269,6 @@ void Configure() {
     }
     while(true) {
       if(client.SetServerPort(GetConfig("GetPort"))) {
-        break;
-      }
-    }
-    while(true) {
-      if(client.SetMessageLength(GetConfig("GetMsgLen"))) {
         break;
       }
     }
