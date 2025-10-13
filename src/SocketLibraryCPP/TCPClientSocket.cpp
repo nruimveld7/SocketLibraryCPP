@@ -11,8 +11,9 @@ namespace SocketLibrary {
       std::unique_lock lock(m_onReadMutex);
       m_onRead = nullptr;
     }
-    m_connected.store(false, std::memory_order_relaxed);
+    m_maxLength.store(64 * 1024, std::memory_order_relaxed);
     m_connectionDelay.store(5, std::memory_order_relaxed);
+    m_connected.store(false, std::memory_order_relaxed);
     m_cancelConnect.store(false, std::memory_order_relaxed);
     m_connecting.store(false, std::memory_order_relaxed);
   }
@@ -29,6 +30,36 @@ namespace SocketLibrary {
     }
   }
 
+  TCPClientSocket::TCPClientSocket(TCPClientSocket&& other) noexcept : TCPClientSocket() {
+    *this = std::move(other);
+  }
+
+  TCPClientSocket& TCPClientSocket::operator=(TCPClientSocket&& other) noexcept {
+    if(this == &other) {
+      return *this;
+    }
+    const bool restart = other.IsActive();
+    this->Close();
+    Socket::operator=(std::move(other));
+    m_maxLength.store(other.m_maxLength.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    m_connectionDelay.store(other.m_connectionDelay.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    {
+      std::scoped_lock lock(m_onDisconnectMutex, other.m_onDisconnectMutex);
+      m_onDisconnect = std::move(other.m_onDisconnect);
+      other.m_onDisconnect = nullptr;
+    }
+    {
+      std::scoped_lock lock(m_onReadMutex, other.m_onReadMutex);
+      m_onRead = std::move(other.m_onRead);
+      other.m_onRead = nullptr;
+    }
+    other.Close();
+    if(restart) {
+      Open();
+    }
+    return *this;
+  }
+
   void TCPClientSocket::SetOnDisconnect(std::function<void()> onDisconnect) {
     std::unique_lock lock(m_onDisconnectMutex);
     m_onDisconnect = std::move(onDisconnect);
@@ -39,13 +70,35 @@ namespace SocketLibrary {
     m_onRead = std::move(onRead);
   }
 
+  int TCPClientSocket::GetMaxLength() const noexcept {
+    return m_maxLength.load(std::memory_order_acquire);
+  }
+
+  bool TCPClientSocket::SetMaxLength(int maxLength) {
+    if(maxLength > 0) {
+      m_maxLength.store(maxLength, std::memory_order_release);
+      return true;
+    }
+    ErrorInterpreter("Error: max length attempt '" + std::to_string(maxLength) + "' is not valid (must be a number > 0)", false);
+    return false;
+  }
+
+  bool TCPClientSocket::SetMaxLength(const std::string& maxLength) {
+    int maxLengthAttempt = 0;
+    if(!StringToInt(maxLength, maxLengthAttempt)) {
+      ErrorInterpreter("Error parsing max length value from '" + maxLength + "'", false);
+      return false;
+    }
+    return SetMaxLength(maxLengthAttempt);
+  }
+
   int TCPClientSocket::GetConnectionDelay() const noexcept {
     return m_connectionDelay.load(std::memory_order_acquire);
   }
 
   bool TCPClientSocket::SetConnectionDelay(int connectionDelay) {
     if(connectionDelay >= 1) {
-      m_connectionDelay = connectionDelay;
+      m_connectionDelay.store(connectionDelay, std::memory_order_release);
       UpdateInterpreter("Successfully set connection delay: " + std::to_string(connectionDelay));
       return true;
     } else {
@@ -133,6 +186,7 @@ namespace SocketLibrary {
   void TCPClientSocket::ConnectionHandler() {
     if(!SetState(State::Active)) {
       Close();
+      return;
     }
     const std::chrono::milliseconds minBackoff{100};
     const std::chrono::milliseconds maxBackoff{5000};
@@ -227,21 +281,16 @@ namespace SocketLibrary {
   }
 
   void TCPClientSocket::MessageHandler() {
-    int lastMessageLength = -1;
     std::vector<unsigned char> buffer;
     while(IsConnected() && !StopRequested()) {
-      int messageLength = GetMessageLength();
-      if(messageLength <= 0) {
-        ErrorInterpreter("Invalid message length: " + std::to_string(messageLength), false);
-        OnDisconnect();
-        break;
-      }
-      if(messageLength != lastMessageLength) {
-        buffer.resize(messageLength);
-        lastMessageLength = messageLength;
+      int maxLength = GetMaxLength();
+      maxLength = maxLength <= 0 ? 64 * 1024 : maxLength;
+      maxLength = maxLength > INT_MAX ? INT_MAX : maxLength;
+      if(buffer.size() < static_cast<size_t>(maxLength)) {
+        buffer.resize(static_cast<size_t>(maxLength));
       }
       SOCKET thisSocket = GetSocket();
-      const int byteCount = ::recv(thisSocket, reinterpret_cast<char*>(buffer.data()), messageLength, 0);
+      const int byteCount = ::recv(thisSocket, reinterpret_cast<char*>(buffer.data()), maxLength, 0);
       if(byteCount > 0) {
         TrafficUpdate("Received " + std::to_string(byteCount) + " bytes from " + GetPeerAddress(thisSocket));
         OnRead(buffer.data(), static_cast<size_t>(byteCount));
@@ -253,9 +302,6 @@ namespace SocketLibrary {
       }
       const int error = ::WSAGetLastError();
       if(error == WSAEINTR || error == WSAEWOULDBLOCK || error == WSAETIMEDOUT) {
-        if(!IsConnected() || StopRequested()) {
-          break;
-        }
         continue;
       }
       ErrorInterpreter("Socket Error: ", true);

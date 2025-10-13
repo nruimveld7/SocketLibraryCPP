@@ -13,11 +13,18 @@ namespace SocketLibrary {
   public:
     TCPClientSocket();
     ~TCPClientSocket() noexcept override;
+    TCPClientSocket(const TCPClientSocket&) = delete;
+    TCPClientSocket& operator=(const TCPClientSocket&) = delete;
+    TCPClientSocket(TCPClientSocket&& other) noexcept;
+    TCPClientSocket& operator=(TCPClientSocket&& other) noexcept;
     void SetOnDisconnect(std::function<void()> onDisconnect);
     void SetOnRead(std::function<void(unsigned char* message, size_t byteCount)> onRead);
+    int GetMaxLength() const noexcept;
+    bool SetMaxLength(int maxLength);
+    bool SetMaxLength(const std::string& maxLength);
     int GetConnectionDelay() const noexcept;
     bool SetConnectionDelay(int newDelay);
-    bool SetConnectionDelay(const std::string& newDelay);
+    bool SetConnectionDelay(const std::string& connectionDelay);
     bool IsConnected() const noexcept;
     bool IsCancelling() const noexcept;
     bool IsConnecting() const noexcept;
@@ -51,6 +58,7 @@ namespace SocketLibrary {
     void SetConnecting(bool connecting) noexcept;
     void OnDisconnect();
     void OnRead(unsigned char* message, size_t byteCount);
+    std::atomic<int> m_maxLength{64 * 1024};
     std::atomic<int> m_connectionDelay;
     std::atomic<bool> m_connected;
     std::atomic<bool> m_cancelConnect;

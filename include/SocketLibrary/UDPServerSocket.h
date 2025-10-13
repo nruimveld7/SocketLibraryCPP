@@ -12,6 +12,10 @@ namespace SocketLibrary {
   public:
     UDPServerSocket();
     ~UDPServerSocket() noexcept override;
+    UDPServerSocket(const UDPServerSocket&) = delete;
+    UDPServerSocket& operator=(const UDPServerSocket&) = delete;
+    UDPServerSocket(UDPServerSocket&& other) noexcept;
+    UDPServerSocket& operator=(UDPServerSocket&& other) noexcept;
     void SetOnRead(std::function<void(unsigned char* message, size_t byteCount, sockaddr_in sender)> onRead);
     bool Open();
     bool Close();
@@ -105,6 +109,7 @@ namespace SocketLibrary {
     bool Cleanup() override;
     static unsigned __stdcall StaticMessageHandler(void* arg) noexcept;
     void MessageHandler();
+    size_t WaitForMessage(SOCKET socket) const noexcept;
     int Broadcast(const void* bytes, size_t byteCount);
     int Broadcast(const void* bytes, size_t byteCount, int port);
     int Send(const void* bytes, size_t byteCount, const std::string& targetIP, const std::string& targetPort);

@@ -28,9 +28,6 @@ namespace SocketLibrary {
     int GetServerPort() const noexcept;
     bool SetServerPort(int port);
     bool SetServerPort(const std::string& port);
-    int GetMessageLength() const noexcept;
-    bool SetMessageLength(int messageLength);
-    bool SetMessageLength(const std::string& messageLength);
     void SetTrafficUpdates(bool trafficUpdates) noexcept;
     virtual bool Open();
     virtual bool Close();
@@ -121,7 +118,6 @@ namespace SocketLibrary {
     std::string m_serverIP;
     int m_serverPort;
     mutable std::shared_mutex m_configMutex;
-    std::atomic<int> m_messageLength;
     std::atomic<bool> m_wsaRegistered;
     std::atomic<bool> m_configured;
     std::atomic<bool> m_trafficUpdates;

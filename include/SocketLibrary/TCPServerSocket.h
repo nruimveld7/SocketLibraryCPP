@@ -20,8 +20,15 @@ namespace SocketLibrary {
   public:
     TCPServerSocket();
     ~TCPServerSocket() noexcept override;
+    TCPServerSocket(const TCPServerSocket&) = delete;
+    TCPServerSocket& operator=(const TCPServerSocket&) = delete;
+    TCPServerSocket(TCPServerSocket&& other) noexcept;
+    TCPServerSocket& operator=(TCPServerSocket&& other) noexcept;
     void SetOnClientDisconnect(std::function<void(const std::string& address)> onClientDisconnect);
     void SetOnRead(std::function<void(unsigned char* message, size_t byteCount, SOCKET sender)> onRead);
+    int GetMaxLength() const noexcept;
+    bool SetMaxLength(int maxLength);
+    bool SetMaxLength(const std::string& maxLength);
     int GetListenBacklog() const noexcept;
     bool SetListenBacklog(int newSize);
     bool SetListenBacklog(const std::string& newSize);
@@ -134,7 +141,7 @@ namespace SocketLibrary {
     void OnClientDisconnect(const std::string& address);
     void OnRead(unsigned char* message, size_t byteCount, SOCKET sender);
     ConnectionManager m_connections;
-    mutable std::shared_mutex m_connectionsMutex;
+    std::atomic<int> m_maxLength;
     std::atomic<int> m_listenBacklog;
     std::atomic<int> m_maxConnections;
     SocketOptions m_socketOptions;

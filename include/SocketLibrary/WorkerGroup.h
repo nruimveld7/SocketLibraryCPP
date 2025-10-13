@@ -11,10 +11,10 @@ namespace SocketLibrary {
   public:
     WorkerGroup() = default;
     ~WorkerGroup() noexcept;
-    WorkerGroup(WorkerGroup&& other) noexcept;
-    WorkerGroup& operator=(WorkerGroup&& other) noexcept;
     WorkerGroup(const WorkerGroup&) = delete;
     WorkerGroup& operator=(const WorkerGroup&) = delete;
+    WorkerGroup(WorkerGroup&& other) noexcept;
+    WorkerGroup& operator=(WorkerGroup&& other) noexcept;
     bool StartWorker(
       unsigned(__stdcall* workerFunction)(void*),
       void* context,

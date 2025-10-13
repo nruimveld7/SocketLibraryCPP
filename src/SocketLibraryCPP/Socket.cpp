@@ -19,37 +19,8 @@ namespace SocketLibrary {
     UnregisterWSA();
   }
 
-  Socket::Socket(Socket&& other) noexcept
-    : m_thisSocket(other.m_thisSocket.exchange(INVALID_SOCKET, std::memory_order_acq_rel)),
-    m_state(other.m_state.load(std::memory_order_acquire)),
-    m_messageLength(other.m_messageLength.load(std::memory_order_relaxed)),
-    m_wsaRegistered(other.m_wsaRegistered.load(std::memory_order_relaxed)),
-    m_configured(other.m_configured.load(std::memory_order_relaxed)),
-    m_trafficUpdates(other.m_trafficUpdates.load(std::memory_order_relaxed)),
-    m_workers(std::move(other.m_workers)) {
-      //Move protected members under exclusive locks
-      {
-        std::scoped_lock lock(m_errorHandlerMutex, other.m_errorHandlerMutex);
-        m_errorHandler = std::move(other.m_errorHandler);
-      }
-      {
-        std::scoped_lock lock(m_updateHandlerMutex, other.m_updateHandlerMutex);
-        m_updateHandler = std::move(other.m_updateHandler);
-      }
-      {
-        //std::scoped_lock lock(m_configMutex, other.m_configMutex);
-        m_name = std::move(other.m_name);
-        m_serverIP = std::move(other.m_serverIP);
-        m_serverPort = other.m_serverPort;
-        other.m_name.clear();
-        other.m_serverIP.clear();
-        other.m_serverPort = INVALID_PORT;
-      }
-      // Invalidate source
-      other.m_state.store(State::Idle, std::memory_order_relaxed);
-      other.m_wsaRegistered = false;
-      other.m_configured = false;
-      m_errorHandlerFaulted.store(other.m_errorHandlerFaulted.exchange(true, std::memory_order_acq_rel), std::memory_order_release);
+  Socket::Socket(Socket&& other) noexcept : Socket() {
+    *this = std::move(other);
   }
 
   Socket& Socket::operator=(Socket&& other) noexcept {
@@ -66,7 +37,7 @@ namespace SocketLibrary {
         m_updateHandler = std::move(other.m_updateHandler);
       }
       {
-        //std::scoped_lock lock(m_configMutex, other.m_configMutex);
+        std::scoped_lock lock(m_configMutex, other.m_configMutex);
         m_name = std::move(other.m_name);
         m_serverIP = std::move(other.m_serverIP);
         m_serverPort = other.m_serverPort;
@@ -76,7 +47,6 @@ namespace SocketLibrary {
       }
       m_state.store(other.m_state.load(std::memory_order_acquire), std::memory_order_release);
       m_errorHandlerFaulted.store(other.m_errorHandlerFaulted.exchange(true, std::memory_order_acq_rel), std::memory_order_release);
-      m_messageLength = other.m_messageLength.load(std::memory_order_relaxed);
       m_wsaRegistered = other.m_wsaRegistered.load(std::memory_order_relaxed);
       m_configured = other.m_configured.load(std::memory_order_relaxed);
       m_trafficUpdates = other.m_trafficUpdates.load(std::memory_order_relaxed);
@@ -84,6 +54,7 @@ namespace SocketLibrary {
       //Invalidate source
       other.m_wsaRegistered = false;
       other.m_configured = false;
+      other.m_state.store(State::Idle, std::memory_order_relaxed);
     }
     return *this;
   }
@@ -154,28 +125,6 @@ namespace SocketLibrary {
       return false;
     }
     return SetServerPort(portAttempt);
-  }
-
-  int Socket::GetMessageLength() const noexcept {
-    return m_messageLength.load(std::memory_order_acquire);
-  }
-
-  bool Socket::SetMessageLength(int messageLength) {
-    if(messageLength > 0) {
-      m_messageLength = messageLength;
-      return true;
-    }
-    ErrorInterpreter("Error: message length attempt '" + std::to_string(messageLength) + "' is not valid (must be a number > 0)", false);
-    return false;
-  }
-
-  bool Socket::SetMessageLength(const std::string& messageLength) {
-    int msgLenAttempt = 0;
-    if(!StringToInt(messageLength, msgLenAttempt)) {
-      ErrorInterpreter("Error parsing message length value from '" + messageLength + "'", false);
-      return false;
-    }
-    return SetMessageLength(msgLenAttempt);
   }
 
   void Socket::SetTrafficUpdates(bool trafficUpdates) noexcept {
@@ -265,7 +214,6 @@ namespace SocketLibrary {
     SetRegistered(false);
     SetConfigured(false);
     SetTrafficUpdates(true);
-    m_messageLength = 1000;
   }
 
   SOCKET Socket::GetSocket() const noexcept {

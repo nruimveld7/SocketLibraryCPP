@@ -11,8 +11,9 @@ namespace SocketLibrary {
       std::unique_lock lock(m_onReadMutex);
       m_onRead = nullptr;
     }
-    m_listenBacklog.store(1, std::memory_order_relaxed);
-    m_maxConnections.store(2, std::memory_order_relaxed);
+    m_maxLength.store(64 * 1024, std::memory_order_relaxed);
+    m_listenBacklog.store(64, std::memory_order_relaxed);
+    m_maxConnections.store(10, std::memory_order_relaxed);
   }
 
   TCPServerSocket::~TCPServerSocket() noexcept {
@@ -27,6 +28,42 @@ namespace SocketLibrary {
     }
   }
 
+  TCPServerSocket::TCPServerSocket(TCPServerSocket&& other) noexcept : TCPServerSocket() {
+    *this = std::move(other);
+  }
+
+  TCPServerSocket& TCPServerSocket::operator=(TCPServerSocket&& other) noexcept {
+    if(this == &other) {
+      return *this;
+    }
+    const bool restart = other.IsActive();
+    this->Close();
+    Socket::operator=(std::move(other));
+    m_maxLength.store(other.m_maxLength.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    m_listenBacklog.store(other.m_listenBacklog.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    m_maxConnections.store(other.m_maxConnections.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    {
+      std::shared_lock sourceLock(other.m_socketOptionsMutex);
+      std::unique_lock destinationLock(m_socketOptionsMutex);
+      m_socketOptions = other.m_socketOptions;
+    }
+    {
+      std::scoped_lock lock(m_onClientDisconnectMutex, other.m_onClientDisconnectMutex);
+      m_onClientDisconnect = std::move(other.m_onClientDisconnect);
+      other.m_onClientDisconnect = nullptr;
+    }
+    {
+      std::scoped_lock lock(m_onReadMutex, other.m_onReadMutex);
+      m_onRead = std::move(other.m_onRead);
+      other.m_onRead = nullptr;
+    }
+    other.Close();
+    if(restart) {
+      Open();
+    }
+    return *this;
+  }
+
   void TCPServerSocket::SetOnClientDisconnect(std::function<void(const std::string& address)> onClientDisconnect) {
     std::unique_lock lock(m_onClientDisconnectMutex);
     m_onClientDisconnect = std::move(onClientDisconnect);
@@ -35,6 +72,28 @@ namespace SocketLibrary {
   void TCPServerSocket::SetOnRead(std::function<void(unsigned char* message, size_t byteCount, SOCKET sender)> onRead) {
     std::unique_lock lock(m_onReadMutex);
     m_onRead = std::move(onRead);
+  }
+
+  int TCPServerSocket::GetMaxLength() const noexcept {
+    return m_maxLength.load(std::memory_order_acquire);
+  }
+
+  bool TCPServerSocket::SetMaxLength(int maxLength) {
+    if(maxLength > 0) {
+      m_maxLength.store(maxLength, std::memory_order_release);
+      return true;
+    }
+    ErrorInterpreter("Error: max length attempt '" + std::to_string(maxLength) + "' is not valid (must be a number > 0)", false);
+    return false;
+  }
+
+  bool TCPServerSocket::SetMaxLength(const std::string& maxLength) {
+    int maxLengthAttempt = 0;
+    if(!StringToInt(maxLength, maxLengthAttempt)) {
+      ErrorInterpreter("Error parsing max length value from '" + maxLength + "'", false);
+      return false;
+    }
+    return SetMaxLength(maxLengthAttempt);
   }
 
   int TCPServerSocket::GetListenBacklog() const noexcept {
@@ -85,7 +144,6 @@ namespace SocketLibrary {
   }
 
   size_t TCPServerSocket::GetNumConnections() const noexcept {
-    std::shared_lock lock(m_connectionsMutex);
     return m_connections.Count();
   }
 
@@ -99,10 +157,7 @@ namespace SocketLibrary {
 
   std::vector<std::string> TCPServerSocket::GetClientAddresses() const {
     std::vector<std::string> addresses;
-    {
-      std::shared_lock lock(m_connectionsMutex);
-      m_connections.Snapshot(addresses);
-    }
+    m_connections.Snapshot(addresses);
     return addresses;
   }
 
@@ -115,10 +170,7 @@ namespace SocketLibrary {
       return;
     }
     std::vector<SOCKET> connections;
-    {
-      std::shared_lock lock(m_connectionsMutex);
-      m_connections.Snapshot(connections);
-    }
+    m_connections.Snapshot(connections);
     for(SOCKET client : connections) {
       ApplySocketOptions(client);
     }
@@ -135,10 +187,7 @@ namespace SocketLibrary {
       return;
     }
     std::vector<SOCKET> connections;
-    {
-      std::shared_lock lock(m_connectionsMutex);
-      m_connections.Snapshot(connections);
-    }
+    m_connections.Snapshot(connections);
     for(SOCKET client : connections) {
       ApplySocketOptions(client);
     }
@@ -200,11 +249,8 @@ namespace SocketLibrary {
   bool TCPServerSocket::Cleanup() {
     UpdateInterpreter("Closing all connected client sockets");
     std::vector<SOCKET> connections;
-    {
-      std::unique_lock lock(m_connectionsMutex);
-      m_connections.Snapshot(connections);
-      m_connections.Clear();
-    }
+    m_connections.Snapshot(connections);
+    m_connections.Clear();
     for(SOCKET socket : connections) {
       if(socket != INVALID_SOCKET && !CloseSocketSafe(socket, true)) {
         ErrorInterpreter("Error closing client socket", false);
@@ -232,6 +278,7 @@ namespace SocketLibrary {
   void TCPServerSocket::AcceptConnection() {
     if(!SetState(State::Active)) {
       Close();
+      return;
     }
     UpdateInterpreter("Accepting socket connections");
     if(!ReadyToAccept()) {
@@ -261,51 +308,43 @@ namespace SocketLibrary {
     if(!ApplySocketOptions(client)) {
       UpdateInterpreter("Failed to apply socket options");
     }
-    size_t connectionCount = 0;
     bool reject = false;
     bool duplicate = false;
     int maxConnections = 0;
-    std::string clientAddress;
-    {
-      std::unique_lock lock(m_connectionsMutex);
-      maxConnections = m_maxConnections.load(std::memory_order_relaxed);
-      if(m_connections.Count() >= static_cast<size_t>(maxConnections)) {
-        reject = true;
-      } else {
-        clientAddress = GetPeerAddress(client);
-        if(clientAddress.empty()) {
-          clientAddress = "Unknown address";
-        }
-        if(!m_connections.AddConnection(client, clientAddress)) {
-          duplicate = true;
-        } else {
-          connectionCount = m_connections.Count();
-        }
-      }
+    std::string clientAddress = GetPeerAddress(client);
+    maxConnections = m_maxConnections.load(std::memory_order_relaxed);
+    ConnectionManager::AddResult addResult = m_connections.AddConnection(client, clientAddress, static_cast<size_t>(maxConnections));
+    std::string message{};
+    switch(addResult.code) {
+      case ConnectionManager::AddResult::Code::Invalid:
+        message = "Invalid client credentials - rejecting new client";
+        break;
+      case ConnectionManager::AddResult::Code::Exists:
+        message = "Duplicate client detected - rejecting new client";
+        break;
+      case ConnectionManager::AddResult::Code::Full:
+        message = "Reached max concurrent connections (" + std::to_string(addResult.count) + "/" + std::to_string(maxConnections) + ") - rejecting new client";
+        break;
+      case ConnectionManager::AddResult::Code::Added:
+        message = "Accepted connection (" + std::to_string(addResult.count) + "/" + std::to_string(maxConnections) + "): " + clientAddress;
+        break;
+      default:
+        message = "Unknown client error - rejecting new client";
+        break;
     }
-    if(reject || duplicate) {
-      if(reject) {
-        UpdateInterpreter("Reached max concurrent connections - rejecting new client");
-      }
-      if(duplicate) {
-        UpdateInterpreter("Duplicate client detected - rejecting new client");
-      }
-      CloseSocketSafe(client, true);
-      return;
-    }
-    std::string msg = "Accepted connection (" + std::to_string(connectionCount) + " of " + std::to_string(maxConnections) + "): " + clientAddress;
-    UpdateInterpreter(msg);
-    auto params = std::make_unique<MessageHandlerParams>(MessageHandlerParams{this, client});
-    if(!StartWorker(&TCPServerSocket::StaticMessageHandler, params.get())) {
-      ErrorInterpreter("Thread creation error: ", true);
-      {
-        std::unique_lock lock(m_connectionsMutex);
+    UpdateInterpreter(message);
+    if(addResult.code == ConnectionManager::AddResult::Code::Added) {
+      auto params = std::make_unique<MessageHandlerParams>(MessageHandlerParams{this, client});
+      if(!StartWorker(&TCPServerSocket::StaticMessageHandler, params.get())) {
+        ErrorInterpreter("Thread creation error: ", true);
         m_connections.RemoveConnection(client);
+        CloseSocketSafe(client, true);
+        return;
       }
+      params.release();
+    } else {
       CloseSocketSafe(client, true);
-      return;
     }
-    params.release();
   }
 
   bool TCPServerSocket::ApplySocketOptions(SOCKET socket) noexcept {
@@ -375,20 +414,16 @@ namespace SocketLibrary {
   }
 
   void TCPServerSocket::MessageHandler(SOCKET clientSocket) {
-    int lastMessageLength = -1;
     std::vector<unsigned char> buffer;
     std::string clientAddress = GetPeerAddress(clientSocket);
     while(!StopRequested()) {
-      int messageLength = GetMessageLength();
-      if(messageLength <= 0) {
-        ErrorInterpreter("Invalid message length: " + std::to_string(messageLength), false);
-        break;
+      int maxLength = GetMaxLength();
+      maxLength = maxLength <= 0 ? 64 * 1024 : maxLength;
+      maxLength = maxLength > INT_MAX ? INT_MAX : maxLength;
+      if(buffer.size() < static_cast<size_t>(maxLength)) {
+        buffer.resize(static_cast<size_t>(maxLength));
       }
-      if(messageLength != lastMessageLength) {
-        buffer.resize(messageLength);
-        lastMessageLength = messageLength;
-      }
-      const int byteCount = ::recv(clientSocket, reinterpret_cast<char*>(buffer.data()), messageLength, 0);
+      const int byteCount = ::recv(clientSocket, reinterpret_cast<char*>(buffer.data()), maxLength, 0);
       if(byteCount > 0) {
         TrafficUpdate("Received " + std::to_string(byteCount) + " bytes from " + clientAddress);
         OnRead(buffer.data(), static_cast<size_t>(byteCount), clientSocket);
@@ -400,9 +435,6 @@ namespace SocketLibrary {
       }
       const int error = ::WSAGetLastError();
       if(error == WSAEINTR || error == WSAEWOULDBLOCK || error == WSAETIMEDOUT) {
-        if(StopRequested()) {
-          break;
-        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         continue;
       }
@@ -424,10 +456,7 @@ namespace SocketLibrary {
       return;
     }
     std::vector<SOCKET> connections;
-    {
-      std::shared_lock lock(m_connectionsMutex);
-      m_connections.Snapshot(connections);
-    }
+    m_connections.Snapshot(connections);
     if(connections.empty()) {
       ErrorInterpreter("Broadcast error: no connections to broadcast over", false);
       return;
@@ -471,10 +500,7 @@ namespace SocketLibrary {
       return 0;
     }
     SOCKET target = INVALID_SOCKET;
-    {
-      std::shared_lock lock(m_connectionsMutex);
-      target = m_connections.FindSocket(targetAddress);
-    }
+    target = m_connections.FindSocket(targetAddress);
     if(target == INVALID_SOCKET) {
       ErrorInterpreter("Send error: unable to find connected client with address '" + targetAddress + "'", false);
       return 0;
@@ -484,14 +510,11 @@ namespace SocketLibrary {
 
   int TCPServerSocket::Send(const void* bytes, size_t byteCount) {
     SOCKET target = INVALID_SOCKET;
-    {
-      std::shared_lock lock(m_connectionsMutex);
-      if(m_connections.Count() == 1) {
-        std::vector<SOCKET> connection;
-        m_connections.Snapshot(connection);
-        if(!connection.empty()) {
-          target = connection.front();
-        }
+    if(m_connections.Count() == 1) {
+      std::vector<SOCKET> connection;
+      m_connections.Snapshot(connection);
+      if(!connection.empty()) {
+        target = connection.front();
       }
     }
     if(target == INVALID_SOCKET) {
@@ -548,10 +571,7 @@ namespace SocketLibrary {
 
   bool TCPServerSocket::CloseClientSocket(SOCKET clientSocket) {
     bool found = false;
-    {
-      std::unique_lock lock(m_connectionsMutex);
-      found = m_connections.RemoveConnection(clientSocket);
-    }
+    found = m_connections.RemoveConnection(clientSocket);
     if(found) {
       UpdateInterpreter("Found client socket in connections list");
     }

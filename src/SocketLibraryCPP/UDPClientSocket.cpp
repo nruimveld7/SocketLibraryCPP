@@ -18,6 +18,33 @@ namespace SocketLibrary {
     }
   }
 
+  UDPClientSocket::UDPClientSocket(UDPClientSocket&& other) noexcept : UDPClientSocket() {
+    *this = std::move(other);
+  }
+
+  UDPClientSocket& UDPClientSocket::operator=(UDPClientSocket&& other) noexcept {
+    if(this == &other) {
+      return *this;
+    }
+    const bool restart = other.IsActive();
+    this->Close();
+    Socket::operator=(std::move(other));
+    {
+      std::scoped_lock lock(m_targetMutex, other.m_targetMutex);
+      m_target = std::move(other.m_target);
+    }
+    {
+      std::scoped_lock lock(m_onReadMutex, other.m_onReadMutex);
+      m_onRead = std::move(other.m_onRead);
+      other.m_onRead = nullptr;
+    }
+    other.Close();
+    if(restart) {
+      Open();
+    }
+    return *this;
+  }
+
   void UDPClientSocket::SetOnRead(std::function<void(unsigned char* message, size_t byteCount, sockaddr_in sender)> onRead) {
     {
       std::unique_lock lock(m_onReadMutex);
@@ -103,8 +130,8 @@ namespace SocketLibrary {
   void UDPClientSocket::MessageHandler() {
     if(!SetState(State::Active)) {
       Close();
+      return;
     }
-    int lastMessageLength = -1;
     std::vector<unsigned char> buffer;
     SOCKET thisSocket = INVALID_SOCKET;
     while(IsActive() && !StopRequested()) {
@@ -113,23 +140,21 @@ namespace SocketLibrary {
         ErrorInterpreter("Socket no longer initialized", false);
         break;
       }
-      int messageLength = GetMessageLength();
-      if(messageLength <= 0) {
-        ErrorInterpreter("Invalid message length: " + std::to_string(messageLength), false);
-        break;
+      size_t messageLength = WaitForMessage(thisSocket);
+      if(messageLength == 0) {
+        continue;
       }
-      if(messageLength != lastMessageLength) {
+      if(buffer.size() < messageLength) {
         buffer.resize(messageLength);
-        lastMessageLength = messageLength;
       }
-      sockaddr_in clientAddr{};
-      int addrLen = sizeof(clientAddr);
+      sockaddr_in clientAddress{};
+      int addrLen = sizeof(clientAddress);
       int byteCount = ::recvfrom(
         thisSocket,
         reinterpret_cast<char*>(buffer.data()),
-        messageLength,
+        static_cast<int>(messageLength),
         0,
-        (sockaddr*)&clientAddr,
+        (sockaddr*)&clientAddress,
         &addrLen
       );
       if(!IsActive()) {
@@ -137,19 +162,36 @@ namespace SocketLibrary {
       }
       if(byteCount >= 0) {
         TrafficUpdate("Received " + std::to_string(byteCount) + " bytes");
-        OnRead(buffer.data(), static_cast<size_t>(byteCount), clientAddr);
+        OnRead(buffer.data(), static_cast<size_t>(byteCount), clientAddress);
         continue;
       }
       const int error = ::WSAGetLastError();
       if(error == WSAEINTR || error == WSAEWOULDBLOCK || error == WSAETIMEDOUT) {
-        if(StopRequested()) {
-          break;
-        }
+        continue;
+      }
+      if(error == WSAEMSGSIZE) {
+        ErrorInterpreter("Message too large - discarding", false);
         continue;
       }
       ErrorInterpreter("Socket error: ", true);
       break;
     }
+  }
+
+  size_t UDPClientSocket::WaitForMessage(SOCKET socket) const noexcept {
+    fd_set fileDescriptor;
+    FD_ZERO(&fileDescriptor);
+    FD_SET(socket, &fileDescriptor);
+    const int result = ::select(0, &fileDescriptor, nullptr, nullptr, nullptr);
+    if(result <= 0 || !FD_ISSET(socket, &fileDescriptor)) {
+      return 0;
+    }
+    u_long available = 0;
+    if(::ioctlsocket(socket, FIONREAD, &available) == 0 && available > 0) {
+      constexpr size_t maxPayload = 65507;
+      return static_cast<size_t>(available > maxPayload ? maxPayload : available);
+    }
+    return 0;
   }
 
   int UDPClientSocket::Send(const void* bytes, size_t byteCount, const std::string& targetIP, const std::string& targetPort) {
