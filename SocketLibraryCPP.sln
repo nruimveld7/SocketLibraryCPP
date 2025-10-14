@@ -5,11 +5,11 @@ VisualStudioVersion = 17.13.35931.197
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SocketLibraryCPP", "src\SocketLibraryCPP\SocketLibraryCPP.vcxproj", "{6B2E0D1C-848D-45DA-987A-CDD6EF3006BA}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "UDPServerConsole", "src\UDPServerConsole\UDPServerConsole.vcxproj", "{EB963F1C-87FA-4FD4-B709-8742D59ACA85}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "UDPServerConsole", "src\examples\UDPServerConsole\UDPServerConsole.vcxproj", "{EB963F1C-87FA-4FD4-B709-8742D59ACA85}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "UDPClientConsole", "src\UDPClientConsole\UDPClientConsole.vcxproj", "{F7EFB87F-0673-4831-9C5A-D4BF742481FF}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "UDPClientConsole", "src\examples\UDPClientConsole\UDPClientConsole.vcxproj", "{F7EFB87F-0673-4831-9C5A-D4BF742481FF}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TCPServerConsole", "src\TCPServerConsole\TCPServerConsole.vcxproj", "{BFBBD59A-F3E9-4BE7-A1C4-656DE2668DE2}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TCPServerConsole", "src\examples\TCPServerConsole\TCPServerConsole.vcxproj", "{BFBBD59A-F3E9-4BE7-A1C4-656DE2668DE2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

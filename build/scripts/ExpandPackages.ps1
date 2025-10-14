@@ -1,4 +1,4 @@
-# repoRoot\build\ViewNupkgs.ps1
+# repoRoot\build\scripts\ExpandPackages.ps1
 # Expand all .nupkg files under build/ into build/_pkgView/<Id.Version>/ and show a tree for each.
 
 $ErrorActionPreference = 'Stop'
@@ -6,8 +6,8 @@ Set-StrictMode -Version Latest
 
 # -- Resolve paths relative to this script (works from any CWD) --
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-$RepoRoot  = Split-Path -Parent $ScriptDir
-$BuildDir  = $ScriptDir
+$BuildDir  = Split-Path -Parent $ScriptDir
+$RepoRoot  = Split-Path -Parent $BuildDir
 $ViewRoot  = Join-Path $BuildDir '_pkgView'
 $LogsDir   = Join-Path $RepoRoot 'build\logs'
 

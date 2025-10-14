@@ -1,4 +1,4 @@
-# repoRoot\build\CleanUp.ps1
+# repoRoot\build\scripts\CleanUp.ps1
 # Deletes *.nupkg in build/, removes build\_pkgView, clears NuGet caches,
 # and wipes repoRoot\lib\SocketLibraryCPP contents.
 # Logs to build\logs\CleanUp_YYYYMMDD-HHMMSS.log
@@ -8,8 +8,8 @@ Set-StrictMode -Version Latest
 
 # -- Resolve paths relative to this script (works from any CWD) --
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-$RepoRoot  = Split-Path -Parent $ScriptDir
-$BuildDir  = $ScriptDir
+$BuildDir  = Split-Path -Parent $ScriptDir
+$RepoRoot  = Split-Path -Parent $BuildDir
 $LogsDir   = Join-Path $RepoRoot 'build\logs'
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 
@@ -51,9 +51,9 @@ function Get-DotNet {
 
 # ---- Run header ----
 "======================================================================" | Out-File -FilePath $RunLog -Encoding UTF8
-"CleanUp run: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"              | Out-File -FilePath $RunLog -Append
-"RepoRoot : $RepoRoot"                                                  | Out-File -FilePath $RunLog -Append
-"BuildDir : $BuildDir"                                                  | Out-File -FilePath $RunLog -Append
+"CleanUp run: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"               | Out-File -FilePath $RunLog -Append
+"RepoRoot : $RepoRoot"                                                   | Out-File -FilePath $RunLog -Append
+"BuildDir : $BuildDir"                                                   | Out-File -FilePath $RunLog -Append
 "======================================================================" | Out-File -FilePath $RunLog -Append
 
 # ---- Delete *.nupkg in build/ ----

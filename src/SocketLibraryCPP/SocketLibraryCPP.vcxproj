@@ -177,15 +177,14 @@
     <ClInclude Include="..\..\include\SocketLibrary.h">
       <Link>include\SocketLibrary.h</Link>
     </ClInclude>
+    <ClInclude Include="..\..\include\SocketLibrary\ConnectionManager.h" />
     <ClInclude Include="..\..\include\SocketLibrary\Socket.h">
       <Link>include\SocketLibrary\Socket.h</Link>
     </ClInclude>
     <ClInclude Include="..\..\include\SocketLibrary\TCPClientSocket.h">
       <Link>include\SocketLibrary\TCPClientSocket.h</Link>
     </ClInclude>
-    <ClInclude Include="..\..\include\SocketLibrary\TCPServerSocket.h">
-      <Link>include\SocketLibrary\TCPServerSocket.h</Link>
-    </ClInclude>
+    <ClInclude Include="..\..\include\SocketLibrary\TCPServerSocket.h" />
     <ClInclude Include="..\..\include\SocketLibrary\UDPClientSocket.h">
       <Link>include\SocketLibrary\UDPClientSocket.h</Link>
     </ClInclude>
@@ -195,9 +194,11 @@
     <ClInclude Include="..\..\include\SocketLibrary\WinSock2First.h">
       <Link>include\SocketLibrary\WinSock2First.h</Link>
     </ClInclude>
+    <ClInclude Include="..\..\include\SocketLibrary\WorkerGroup.h" />
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ConnectionManager.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -209,6 +210,7 @@
     <ClCompile Include="TCPServerSocket.cpp" />
     <ClCompile Include="UDPClientSocket.cpp" />
     <ClCompile Include="UDPServerSocket.cpp" />
+    <ClCompile Include="WorkerGroup.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -10,7 +10,9 @@
 #include "SocketLibrary.h"
 #include <Windows.h>
 
-void OnRead(unsigned char* message, int byteCount);
+using namespace SocketLibrary;
+
+void OnRead(unsigned char* message, size_t byteCount, SOCKET sender);
 void UpdateHandler(std::string message);
 void ErrorHandler(std::string message);
 void PrintToConsole(const std::string& message);
@@ -36,7 +38,7 @@ int GetInt(
 HANDLE pipeRead = INVALID_HANDLE_VALUE;
 HANDLE pipeWrite = INVALID_HANDLE_VALUE;
 bool spawned = false;
-UDPClientSocket client;
+TCPServerSocket server;
 std::mutex managerLock;
 DWORD managerPid;
 
@@ -59,7 +61,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Between messages, enter '/m' or '/c' to modify or close the socket respectively." << std::endl << std::endl;
   }
   std::cout << "Ready To Communicate" << std::endl;
-  std::cout << "Enter '/n' to communicate with a new server" << std::endl;
+  std::cout << "Enter '/bc' to broadcast to all connected clients" << std::endl;
   std::cout << "Otherwise, begin typing the message to send" << std::endl;
   if(spawned) {
     std::thread monitor = std::thread(ManagerHandler);
@@ -79,7 +81,7 @@ int main(int argc, char* argv[]) {
   }
 }
 
-void OnRead(unsigned char* message, int byteCount) {
+void OnRead(unsigned char* message, size_t byteCount, SOCKET sender) {
   if(message == nullptr) {
     PrintToConsole("Invalid Message");
     return;
@@ -150,33 +152,26 @@ bool CheckManager() {
 }
 
 void InputHandler(std::string input) {
-  if(input == "/n") {
-    std::cout << "Setting up communications with a new server:" << std::endl;
-    std::string targetIP = "";
-    while(true) {
-      targetIP = GetString("Enter the target IP address: ");
-      if(Socket::CheckIP(targetIP)) {
-        break;
-      }
-    }
-    int targetPort = 0;
-    while(true) {
-      targetPort = GetInt("Enter the target port: ");
-      if(Socket::CheckPort(targetPort)) {
-        break;
-      }
-    }
-    std::cout << "Enter the message to send: ";
-    std::getline(std::cin, input);
-    client.Send(input.c_str(), static_cast<int>(input.size()), targetIP, targetPort);
-  } else if(input == "/m" && !spawned) {
-    client.Close();
+  if(input == "/m" && !spawned) {
+    server.Close();
     Configure();
   } else if(input == "/c" && !spawned) {
-    client.Close();
+    server.Close();
+  } else if(input == "/bc") {
+    std::string message = GetString("Enter the message to send: ");
+    server.Broadcast(message.c_str(), static_cast<int>(message.size()));
   } else {
-    std::cout << "Replying with: " << input << std::endl;
-    client.Send(input.c_str(), static_cast<int>(input.size()));
+    std::cout << "Valid IPs:" << std::endl;
+    const auto& clientAddresses = server.GetClientAddresses();
+    if(clientAddresses.empty()) {
+      std::cout << "No Connected Clients" << std::endl;
+      return;
+    }
+    for(const auto& address : clientAddresses) {
+      std::cout << address << std::endl;
+    }
+    std::string address = GetString("Enter the address of the connected client: ");
+    server.Send(input.c_str(), static_cast<int>(input.size()), address);
   }
 }
 
@@ -246,7 +241,7 @@ bool ManagerRequest() {
   std::string request = "";
   if(PipeRead(request)) {
     if(request == "Modify") {
-      client.Close();
+      server.Close();
       Configure();
     } else if(request == "Close") {
       return true;
@@ -256,26 +251,31 @@ bool ManagerRequest() {
 }
 
 void Configure() {
-  client.SetErrorHandler(ErrorHandler);
-  client.SetUpdateHandler(UpdateHandler);
-  client.SetOnRead(OnRead);
+  server.SetErrorHandler(ErrorHandler);
+  server.SetUpdateHandler(UpdateHandler);
+  server.SetOnRead(OnRead);
   while(true) {
     while(true) {
-      if(client.SetIP(GetConfig("GetIP"))) {
+      if(server.SetServerIP(GetConfig("GetIP"))) {
         break;
       }
     }
     while(true) {
-      if(client.SetPortNum(GetConfig("GetPort"))) {
+      if(server.SetServerPort(GetConfig("GetPort"))) {
         break;
       }
     }
     while(true) {
-      if(client.SetMessageLength(GetConfig("GetMsgLen"))) {
+      if(server.SetListenBacklog(GetConfig("GetLstnBklg"))) {
         break;
       }
     }
-    if(client.Open()) {
+    while(true) {
+      if(server.SetMaxConnections(GetConfig("GetMaxConn"))) {
+        break;
+      }
+    }
+    if(server.Open()) {
       break;
     }
   }
@@ -298,7 +298,7 @@ std::string trim(const std::string& str) {
 }
 
 void Close() {
-  client.Close();
+  server.Close();
   exit(0);
 }
 

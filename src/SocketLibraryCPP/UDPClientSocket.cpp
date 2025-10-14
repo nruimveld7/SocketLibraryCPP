@@ -1,120 +1,316 @@
 #include "pch.h"
 #include "SocketLibrary/UDPClientSocket.h"
 
-UDPClientSocket::UDPClientSocket() : m_target() {
-	{
-		std::unique_lock lock(m_onReadMutex);
-		m_onRead = nullptr;
-	}
-	m_target.sin_family = AF_UNSPEC;
-}
+namespace SocketLibrary {
+  UDPClientSocket::UDPClientSocket() : m_target() {
+    {
+      std::unique_lock lock(m_onReadMutex);
+      m_onRead = nullptr;
+    }
+    m_target = {};
+  }
 
-UDPClientSocket::~UDPClientSocket() {
-	Close();
-	{
-		std::unique_lock lock(m_onReadMutex);
-		m_onRead = nullptr;
-	}
-}
+  UDPClientSocket::~UDPClientSocket() noexcept {
+    Close();
+    {
+      std::unique_lock lock(m_onReadMutex);
+      m_onRead = nullptr;
+    }
+  }
 
-void UDPClientSocket::SetOnRead(std::function<void(unsigned char* message, int byteCount)> onRead) {
-	std::unique_lock lock(m_onReadMutex);
-	m_onRead = std::move(onRead);
-}
+  UDPClientSocket::UDPClientSocket(UDPClientSocket&& other) noexcept : UDPClientSocket() {
+    *this = std::move(other);
+  }
 
-bool UDPClientSocket::Open() {
-	if(!Initialize(SOCK_DGRAM)) {
-		ErrorInterpreter("Error Initializing Socket", false);
-		return false;
-	}
-	if(m_target.sin_family == AF_UNSPEC) {
-		m_target = m_service;
-	}
-	UpdateInterpreter("Binding Socket");
-	if(bind(m_thisSocket, (SOCKADDR*)&m_service, sizeof(m_service)) == SOCKET_ERROR) {
-		ErrorInterpreter("Socket Binding Error: ", true);
-		//if(m_wsaRegistered) {
-			UnregisterWSA();
-		//}
-		return false;
-	}
-	UpdateInterpreter("Binding Successful!");
-	m_configured = true;
-	UpdateInterpreter("Preparing To Listen For Messages");
-	HANDLE hThread = CreateThread(nullptr, 0, &UDPClientSocket::StaticMessageHandler, this, 0, nullptr);
-	if(hThread == nullptr) {
-		ErrorInterpreter("Thread Creation Error: ", true);
-		//if(m_wsaRegistered) {
-			UnregisterWSA();
-		//}
-		return false;
-	}
-	CloseHandle(hThread);
-	UpdateInterpreter("Ready To Send Messages");
-	return true;
-}
+  UDPClientSocket& UDPClientSocket::operator=(UDPClientSocket&& other) noexcept {
+    if(this == &other) {
+      return *this;
+    }
+    const bool restart = other.IsActive();
+    this->Close();
+    Socket::operator=(std::move(other));
+    {
+      std::scoped_lock lock(m_targetMutex, other.m_targetMutex);
+      m_target = std::move(other.m_target);
+    }
+    {
+      std::scoped_lock lock(m_onReadMutex, other.m_onReadMutex);
+      m_onRead = std::move(other.m_onRead);
+      other.m_onRead = nullptr;
+    }
+    other.Close();
+    if(restart) {
+      Open();
+    }
+    return *this;
+  }
 
-bool UDPClientSocket::Close() {
-	m_active = false;
-	UpdateInterpreter("Closing Client Socket");
-	if(!CloseSocketSafe(m_thisSocket, true)) {
-		UpdateInterpreter("Error Closing Client Socket");
-		return false;
-	}
-	UpdateInterpreter("Client Socket Closed");
-	if(!UnregisterWSA()) {
-		return false;
-	}
-	return true;
-}
+  void UDPClientSocket::SetOnRead(std::function<void(unsigned char* message, size_t byteCount, sockaddr_in sender)> onRead) {
+    {
+      std::unique_lock lock(m_onReadMutex);
+      m_onRead = std::move(onRead);
+    }
+  }
 
-DWORD WINAPI UDPClientSocket::StaticMessageHandler(LPVOID lpParam) {
-	auto* clientSocket = reinterpret_cast<UDPClientSocket*>(lpParam);
-	if(clientSocket) {
-		clientSocket->MessageHandler();
-		return 0;
-	}
-	return 1;
-}
+  bool UDPClientSocket::Open() {
+    return Socket::Open();
+  }
 
-void UDPClientSocket::MessageHandler() {
-	m_active = true;
-	while(true) {
-		std::vector<unsigned char> buffer(m_messageLength);
-		sockaddr_in serverAddr;
-		int addrLen = sizeof(serverAddr);
+  bool UDPClientSocket::Close() {
+    return Socket::Close();
+  }
 
-		int byteCount = recvfrom(
-			m_thisSocket,
-			reinterpret_cast<char*>(buffer.data()),
-			m_messageLength,
-			0,
-			(sockaddr*)&serverAddr,
-			&addrLen
-		);
-		if(!m_active) {
-			break;
-		}
-		if(byteCount > 0) {
-			UpdateInterpreter("Received " + std::to_string(byteCount) + " Bytes");
-			OnRead(buffer.data(), byteCount);
-		} else {
-			if(byteCount == 0) {
-				ErrorInterpreter("Connection Closed By Server", false);
-			} else {
-				ErrorInterpreter("Error Receiving Message: ", true);
-			}
-			OnRead(nullptr, -1);
-			break;
-		}
-	}
-}
+  bool UDPClientSocket::Startup() {
+    //1) Create UDP socket
+    if(!Initialize(Protocol::UDP)) {
+      ErrorInterpreter("Error initializing socket", false);
+      return false;
+    }
+    SOCKET thisSocket = GetSocket();
+    if(thisSocket == INVALID_SOCKET) {
+      ErrorInterpreter("Socket no longer initialized", false);
+      return false;
+    }
+    //2) Apply socket options
+    DWORD bytesReturned = 0;
+    BOOL disableICMPReset = FALSE;
+    ::WSAIoctl(
+      thisSocket,
+      _WSAIOW(IOC_VENDOR, 12),
+      &disableICMPReset,
+      sizeof(disableICMPReset),
+      nullptr,
+      0,
+      &bytesReturned,
+      nullptr,
+      nullptr
+    );
+    //3) Build bind address and bind the socket
+    UpdateInterpreter("Binding socket");
+    sockaddr_in bindAddress{};
+    bindAddress.sin_family = AF_INET;
+    bindAddress.sin_addr.s_addr = htonl(INADDR_ANY);
+    bindAddress.sin_port = htons(0);
+    int bindLength = sizeof(bindAddress);
+    if(::bind(thisSocket, reinterpret_cast<const sockaddr*>(&bindAddress), bindLength) == SOCKET_ERROR) {
+      ErrorInterpreter("Socket binding error: ", true);
+      return false;
+    }
+    //4) Initialize default target
+    sockaddr_in targetAddress{};
+    if(GetServiceAddress(Protocol::UDP, targetAddress)) {
+      std::unique_lock lock(m_targetMutex);
+      if(m_target.sin_family == AF_UNSPEC) {
+        m_target = targetAddress;
+      }
+    }
+    //5) Listen on socket
+    SetConfigured(true);
+    UpdateInterpreter("Preparing to listen for messages");
+    if(!StartWorker(&UDPClientSocket::StaticMessageHandler, this)) {
+      ErrorInterpreter("Thread creation error: ", true);
+      return false;
+    }
+    UpdateInterpreter("Ready to send messages");
+    return true;
+  }
 
-void UDPClientSocket::OnRead(unsigned char* message, int byteCount) {
-	std::unique_lock lock(m_onReadMutex);
-	if(m_onRead) {
-		m_onRead(message, byteCount);
-	} else {
-		UpdateInterpreter("Received Message");
-	}
-}
+  bool UDPClientSocket::Cleanup() {
+    return true;
+  }
+
+  unsigned __stdcall UDPClientSocket::StaticMessageHandler(void* arg) noexcept {
+    auto* serverSocket = static_cast<UDPClientSocket*>(arg);
+    if(serverSocket) {
+      serverSocket->MessageHandler();
+    }
+    return 0;
+  }
+
+  void UDPClientSocket::MessageHandler() {
+    if(!SetState(State::Active)) {
+      Close();
+      return;
+    }
+    std::vector<unsigned char> buffer;
+    SOCKET thisSocket = INVALID_SOCKET;
+    while(IsActive() && !StopRequested()) {
+      thisSocket = GetSocket();
+      if(thisSocket == INVALID_SOCKET) {
+        ErrorInterpreter("Socket no longer initialized", false);
+        break;
+      }
+      size_t messageLength = WaitForMessage(thisSocket);
+      if(messageLength == 0) {
+        continue;
+      }
+      if(buffer.size() < messageLength) {
+        buffer.resize(messageLength);
+      }
+      sockaddr_in clientAddress{};
+      int addrLen = sizeof(clientAddress);
+      int byteCount = ::recvfrom(
+        thisSocket,
+        reinterpret_cast<char*>(buffer.data()),
+        static_cast<int>(messageLength),
+        0,
+        (sockaddr*)&clientAddress,
+        &addrLen
+      );
+      if(!IsActive()) {
+        break;
+      }
+      if(byteCount >= 0) {
+        TrafficUpdate("Received " + std::to_string(byteCount) + " bytes");
+        OnRead(buffer.data(), static_cast<size_t>(byteCount), clientAddress);
+        continue;
+      }
+      const int error = ::WSAGetLastError();
+      if(error == WSAEINTR || error == WSAEWOULDBLOCK || error == WSAETIMEDOUT) {
+        continue;
+      }
+      if(error == WSAEMSGSIZE) {
+        ErrorInterpreter("Message too large - discarding", false);
+        continue;
+      }
+      ErrorInterpreter("Socket error: ", true);
+      break;
+    }
+  }
+
+  size_t UDPClientSocket::WaitForMessage(SOCKET socket) const noexcept {
+    fd_set fileDescriptor;
+    FD_ZERO(&fileDescriptor);
+    FD_SET(socket, &fileDescriptor);
+    const int result = ::select(0, &fileDescriptor, nullptr, nullptr, nullptr);
+    if(result <= 0 || !FD_ISSET(socket, &fileDescriptor)) {
+      return 0;
+    }
+    u_long available = 0;
+    if(::ioctlsocket(socket, FIONREAD, &available) == 0 && available > 0) {
+      constexpr size_t maxPayload = 65507;
+      return static_cast<size_t>(available > maxPayload ? maxPayload : available);
+    }
+    return 0;
+  }
+
+  int UDPClientSocket::Send(const void* bytes, size_t byteCount, const std::string& targetIP, const std::string& targetPort) {
+    return Send(bytes, byteCount, ConstructAddress(targetIP, targetPort));
+  }
+
+  int UDPClientSocket::Send(const void* bytes, size_t byteCount, const std::string& targetIP, int targetPort) {
+    return Send(bytes, byteCount, ConstructAddress(targetIP, targetPort));
+  }
+
+  int UDPClientSocket::Send(const void* bytes, size_t byteCount, const std::string& targetAddress) {
+    if(targetAddress.empty()) {
+      ErrorInterpreter("Send error: invalid target address", false);
+      return 0;
+    }
+    sockaddr_in target{};
+    if(!ParseSocketAddress(targetAddress, Protocol::UDP, target)) {
+      ErrorInterpreter("Send error: invalid target address format", false);
+      return 0;
+    }
+    return Send(bytes, byteCount, target);
+  }
+
+  int UDPClientSocket::Send(const void* bytes, size_t byteCount, const sockaddr_in& target) {
+    if(!IsValidEndpointIPv4(target)) {
+      ErrorInterpreter("Send error: invalid target address", false);
+      return 0;
+    }
+    {
+      std::unique_lock lock(m_targetMutex);
+      m_target = target;
+    }
+    return Send(bytes, byteCount);
+  }
+
+  int UDPClientSocket::Send(const void* bytes, size_t byteCount) {
+    if(!bytes || byteCount == 0) {
+      ErrorInterpreter("Send error: invalid buffer/length", false);
+      return 0;
+    }
+    if(byteCount > static_cast<size_t>(std::numeric_limits<int>::max())) {
+      ErrorInterpreter("Send error: payload too large for WinSock", false);
+      return 0;
+    }
+    SOCKET thisSocket = GetSocket();
+    if(!(GetConfigured() && GetRegistered() && thisSocket != INVALID_SOCKET)) {
+      ErrorInterpreter("Send error: socket is not initialized/bound", false);
+      return 0;
+    }
+    sockaddr_in target{};
+    {
+      std::shared_lock lock(m_targetMutex);
+      target = m_target;
+    }
+    if(!IsValidEndpointIPv4(target)) {
+      ErrorInterpreter("Send error: invalid target address", false);
+      return 0;
+    }
+    TrafficUpdate("Sending message to: " + GetSocketAddress(target) + " - " + std::to_string(byteCount) + " bytes");
+    const int totalBytes = static_cast<int>(byteCount);
+    const int sentBytes = SendAll(target, static_cast<const char*>(bytes), totalBytes);
+    if(sentBytes != totalBytes) {
+      ErrorInterpreter("Error sending message to " + GetSocketAddress(target) + ": ", true);
+    } else {
+      TrafficUpdate("Successfully sent message");
+    }
+    return sentBytes;
+  }
+
+  int UDPClientSocket::SendAll(sockaddr_in socket, const char* buffer, int bufferSize) {
+    int totalSent = 0;
+    SOCKET thisSocket = INVALID_SOCKET;
+    while(totalSent < bufferSize) {
+      thisSocket = GetSocket();
+      const int sentBytes = ::sendto(
+        thisSocket,
+        buffer + totalSent,
+        bufferSize - totalSent,
+        0,
+        reinterpret_cast<SOCKADDR*>(&socket),
+        sizeof(socket)
+      );
+      if(sentBytes == SOCKET_ERROR) {
+        const int error = ::WSAGetLastError();
+        if(error == WSAEINTR || error == WSAEWOULDBLOCK || error == WSAETIMEDOUT) {
+          if(StopRequested()) {
+            break;
+          }
+          continue;
+        }
+        return totalSent; //Short write on fatal error
+      }
+      if(sentBytes == 0) {
+        //Not sure what this indicates on UDP?
+        return totalSent;
+      }
+      totalSent += sentBytes;
+    }
+    return totalSent;
+  }
+
+  void UDPClientSocket::OnRead(unsigned char* message, size_t byteCount, sockaddr_in sender) {
+    std::function<void(unsigned char* message, size_t byteCount, sockaddr_in sender)> callback;
+    {
+      std::shared_lock lock(m_onReadMutex);
+      callback = m_onRead;
+    }
+    if(!callback) {
+      std::string update = "Received message";
+      update += " from " + GetSocketAddress(sender);
+      UpdateInterpreter(update);
+      return;
+    }
+    try {
+      callback(message, byteCount, sender);
+    } catch(const std::exception& e) {
+      ErrorInterpreter(std::string("OnRead callback exception: ") + e.what(), false);
+    } catch(...) {
+      ErrorInterpreter("OnRead callback exception: unknown", false);
+    }
+  }
+} //namespace SocketLibrary

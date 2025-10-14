@@ -1,4 +1,4 @@
-# repoRoot\build\BuildLibs.ps1
+# repoRoot\build\scripts\BuildLibraries.ps1
 # Build every Configuration|Platform in the vcxproj and write ONE timestamped log per run.
 
 $ErrorActionPreference = 'Stop'
@@ -6,7 +6,8 @@ Set-StrictMode -Version Latest
 
 # -- Resolve paths relative to this script (works from any CWD) --
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-$RepoRoot  = Split-Path -Parent $ScriptDir
+$BuildDir = Split-Path -Parent $ScriptDir
+$RepoRoot  = Split-Path -Parent $BuildDir
 $ProjPath  = Join-Path $RepoRoot 'src\SocketLibraryCPP\SocketLibraryCPP.vcxproj'
 if (-not (Test-Path -LiteralPath $ProjPath)) { throw "Project not found: $ProjPath" }
 

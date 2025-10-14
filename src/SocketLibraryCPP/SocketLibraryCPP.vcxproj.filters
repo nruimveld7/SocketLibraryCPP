@@ -18,25 +18,31 @@
     <ClInclude Include="pch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\SocketLibrary.h">
+    <ClInclude Include="..\..\include\SocketLibrary.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\SocketLibrary\Socket.h">
+    <ClInclude Include="..\..\include\SocketLibrary\Socket.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\SocketLibrary\TCPClientSocket.h">
+    <ClInclude Include="..\..\include\SocketLibrary\TCPClientSocket.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\SocketLibrary\TCPServerSocket.h">
+    <ClInclude Include="..\..\include\SocketLibrary\UDPClientSocket.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\SocketLibrary\UDPClientSocket.h">
+    <ClInclude Include="..\..\include\SocketLibrary\UDPServerSocket.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\SocketLibrary\UDPServerSocket.h">
+    <ClInclude Include="..\..\include\SocketLibrary\WinSock2First.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\SocketLibrary\WinSock2First.h">
+    <ClInclude Include="..\..\include\SocketLibrary\WorkerGroup.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\SocketLibrary\TCPServerSocket.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\SocketLibrary\ConnectionManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -44,10 +50,10 @@
     <ClCompile Include="pch.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Socket.cpp">
+    <ClCompile Include="TCPClientSocket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TCPClientSocket.cpp">
+    <ClCompile Include="UDPServerSocket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="TCPServerSocket.cpp">
@@ -56,7 +62,13 @@
     <ClCompile Include="UDPClientSocket.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="UDPServerSocket.cpp">
+    <ClCompile Include="Socket.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WorkerGroup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ConnectionManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
