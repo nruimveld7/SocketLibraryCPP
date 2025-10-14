@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
   <metadata>
     <id>SocketLibraryCPP</id>
-    <version>1.2.0</version>
+    <version>1.2.1</version>
     <authors>Noah Ruimveld</authors>
     <owners>Noah Ruimveld</owners>
     <description>Windows static C++ socket library (WinSock2). Ready-to-use TCP/UDP client &amp; server classes with async callbacks, fixed-length TCP framing, and automatic MSBuild integration (x86/x64, Debug/Release).</description>
@@ -13,6 +13,7 @@
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <icon>SocketLibraryCPP.png</icon>
     <releaseNotes>
+      - 1.2.1: API cleanup, lifecycle refactoring, centralized TCP Server socket connections
       - 1.2.0: API cleanup, TCP socket refactoring, normalized destruction
       - 1.1.2: Update to NuGet package docs
       - 1.1.1: API cleanup, better errors, string overloads
