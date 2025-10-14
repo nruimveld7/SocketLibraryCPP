@@ -1,79 +1,80 @@
 # SocketLibraryCPP
 
 **Windows static C++ socket library** for MSVC, built on **WinSock2**.  
-Ready‑to‑use **TCP/UDP client & server** classes with simple async callbacks, clean state machine, and automatic MSBuild wiring via NuGet.
+Ready-to-use **TCP/UDP client & server** classes with async callbacks, a clean state machine, and automatic MSBuild wiring via NuGet.
 
 ---
 
 ## Highlights
-- **Drop‑in sockets:** `TCPClientSocket`, `TCPServerSocket`, `UDPClientSocket`, `UDPServerSocket`
+- **Drop-in sockets:** `TCPClientSocket`, `TCPServerSocket`, `UDPClientSocket`, `UDPServerSocket`
 - **Async callbacks** on worker threads (`SetOnRead`, `SetOnClientDisconnect`, etc.)
-- **Fixed‑length TCP framing** via `SetMessageLength(...)`
-- **Zero external deps:** MSVC + WinSock2 only
-- **Prebuilt x86/x64 static libs** with **auto include/lib** wiring for Debug/Release
-- **Strict include‑order guard** to keep `winsock2.h` first
+- **Configurable TCP framing** via `SetMaxLength(...)`
+- **Zero external dependencies:** MSVC + WinSock2 only
+- **Prebuilt x86/x64 static libs** auto-linked for Debug/Release
+- **Strict include-order guard** (`winsock2.h` always first)
 
+---
 
 ## Supported
-- **Toolchain:** MSVC (Visual Studio)
-- **OS:** Windows desktop/server
-- **Architectures:** x86, x64
-- **Linking:** static `.lib`
+| Category | Supported |
+|-----------|------------|
+| **Toolchain** | MSVC (Visual Studio 2019–2022) |
+| **OS** | Windows desktop/server (XP → 11) |
+| **Architectures** | x86, x64 |
+| **Linking** | Static `.lib` |
+
+---
 
 ## Install
-Use the NuGet UI or Package Manager Console in your C++ project:
+Use NuGet Package Manager or the console:
 ```powershell
 Install-Package SocketLibraryCPP
 ```
 The package automatically:
-- Adds `include/` to **AdditionalIncludeDirectories**
-- Selects the correct **.lib** for your current **Platform/Configuration**
+- Adds `include/` to your **AdditionalIncludeDirectories**
+- Selects the matching `.lib` for platform/configuration
 - Injects the library into your **AdditionalDependencies**
 
-## Quick start
+---
 
-### TCP server (recv + echo, broadcast capable)
+## Quick Start
+
+### TCP Server (receive + echo, broadcast capable)
 ```cpp
-#include <string>
 #include <SocketLibrary/TCPServerSocket.h>
 using namespace SocketLibrary;
 
 int main() {
     TCPServerSocket server;
-    //Optional: receive socket errors
-    server.SetErrorHandler([&](const std::string& message)) {
+    server.SetErrorHandler([](const std::string& msg) {
         //Log error message
-    }
-    //Optional: receive socket logs
-    server.SetUpdateHandler([&](const std::string& message)) {
+    });
+    server.SetUpdateHandler([](const std::string& msg) {
         //Log update message
-    }
-    //Optional: accept replies from server
-    server.SetServerIP("0.0.0.0");
-    server.SetServerPort(55555);
-    server.SetMessageLength(1000);
-    //Called when bytes arrive from a client
+    });
     server.SetOnRead([&](unsigned char* data, size_t count, SOCKET client){
-        server.Send(data, count, client); //Echo back
+        server.Send(data, count, client); // Echo back
         //server.Broadcast(data, count);
     });
-    //Optional: observe disconnects
-    server.SetOnClientDisconnect([&](const std::string& clientAddress){
-        //Log/cleanup
+    server.SetOnClientDisconnect([](const std::string& addr) {
+        //Handle client disconnect
     });
+    server.SetServerIP("0.0.0.0");
+    server.SetServerPort(55555);
+    server.SetMaxLength(1000);
     if(!server.Open()) {
-        //Handle startup error
         return 1;
     }
     while(true) {
-        //Run until shutdown
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     server.Close();
 }
 ```
 
-### TCP client (connect + send)
+---
+
+### TCP Client (connect + send)
 ```cpp
 #include <string>
 #include <SocketLibrary/TCPClientSocket.h>
@@ -81,71 +82,67 @@ using namespace SocketLibrary;
 
 int main() {
     TCPClientSocket client;
-    client.SetErrorHandler([&](const std::string& message)) {
+    client.SetErrorHandler([](const std::string& msg) {
         //Log error message
-    }
-    client.SetUpdateHandler([&](const std::string& message)) {
+    });
+    client.SetUpdateHandler([](const std::string& msg) {
         //Log update message
-    }
+    });
+    client.SetOnRead([](unsigned char* data, size_t count) {
+        //Handle message
+    });
+    client.SetOnDisconnect([]() {
+        //Handle disconnect
+    });
     client.SetServerIP("127.0.0.1");
     client.SetServerPort(55555);
-    server.SetMessageLength(1000);
-    client.SetOnRead([](unsigned char* data, size_t count){
-        //Handle server response
-    });
-    //Optional: observe disconnects
-    client.SetOnDisconnect([](){
-        //Server closed or connection lost
-    });
+    client.SetMaxLength(1000);
     if(!client.Open()) {
-        //Handle startup error
         return 1;
     }
-    std::string message = "hello";
-    client.Send(message.c_str(), message.size());
+    std::string msg = "hello";
+    client.Send(msg.c_str(), msg.size());
     while(true) {
-        //Run until shutdown
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     client.Close();
 }
 ```
 
-### UDP server (recv + echo, broadcast capable)
+---
+
+### UDP Server (bind + echo, broadcast capable)
 ```cpp
-#include <string>
 #include <SocketLibrary/UDPServerSocket.h>
 using namespace SocketLibrary;
 
 int main() {
     UDPServerSocket server;
-    server.SetErrorHandler([&](const std::string& message)) {
+    server.SetErrorHandler([](const std::string& msg) {
         //Log error message
-    }
-    server.SetUpdateHandler([&](const std::string& message)) {
+    });
+    server.SetUpdateHandler([](const std::string& msg) {
         //Log update message
-    }
-    server.SetServerIP("0.0.0.0");
-    server.SetServerPort(55555);
-    server.SetMessageLength(1000);
-    //Called when bytes arrive from a client
+    });
     server.SetOnRead([&](unsigned char* data, size_t count, sockaddr_in client){
-        server.Send(data, count, client); //Echo back
+        server.Send(data, count, client); // Echo back
         //server.Broadcast(data, count);
     });
+    server.SetServerIP("0.0.0.0");
+    server.SetServerPort(55555);
     if(!server.Open()) {
-        //Handle startup error
         return 1;
     }
     while(true) {
-        //Run until shutdown
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     server.Close();
 }
 ```
 
-### UDP client (ephemeral bind + target caching)
+---
+
+### UDP Client (ephemeral bind + target caching)
 ```cpp
 #include <string>
 #include <SocketLibrary/UDPClientSocket.h>
@@ -153,30 +150,24 @@ using namespace SocketLibrary;
 
 int main() {
     UDPClientSocket client;
-    client.SetErrorHandler([&](const std::string& message)) {
+    client.SetErrorHandler([](const std::string& msg) {
         //Log error message
-    }
-    client.SetUpdateHandler([&](const std::string& message)) {
+    });
+    client.SetUpdateHandler([](const std::string& msg) {
         //Log update message
-    }
+    });
+    client.SetOnRead([](unsigned char* data, size_t count, sockaddr_in sender) {
+        //Handle message
+    });
     client.SetServerIP("127.0.0.1");
     client.SetServerPort(55555);
-    client.SetMessageLength(1000);
-    client.SetOnRead([](unsigned char* data, size_t count, sockaddr_in sender){
-        //Handle incoming datagrams
-    });
     if(!client.Open()) {
-        //Handle startup error
         return 1;
     }
-    std::string message = "hello";
-    //Optional: Send with a provided address will set the server credentials
-    //client.Send(message.c_str(), message.size(), "127.0.0.1", 55555);
-    //Send with no provided address will use the previous server credentials
-    client.Send("again", 5);
-    
+    std::string msg = "hello";
+    client.Send(msg.c_str(), msg.size()); // uses cached target
+    //client.Send(msg.c_str(), msg.size(), "127.0.0.1", 55555);
     while(true) {
-        //Run until shutdown
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     client.Close();
@@ -185,41 +176,49 @@ int main() {
 
 ---
 
-## State model (concise)
-
-The base socket has four states. TCP client also tracks `connected/connecting/cancelling` internally, but those are **not** part of the base state.
+## State Model
 
 ```
 Idle --Open()--> Opening --Startup OK--> Active
             \                 \
-             \--Startup Fail--> Closing --> Idle
+             \--Fail----------> Closing --> Idle
 
 Active --Close()--> Closing --> Idle
 Opening --Close()--> Closing --> Idle
 ```
 
-- `Open()` moves `Idle → Opening` and calls `Startup()`.
-- On success, the object becomes `Active` (spawns workers).
-- `Close()` from any state transitions to `Closing`, waits for workers to stop, performs `Cleanup()`, and returns to `Idle`.
+- `Open()` transitions `Idle → Opening → Active` on success  
+- `Close()` transitions any state to `Closing → Idle`  
+- TCP clients track extra internal flags: `connecting`, `connected`, `cancelling`
 
 ---
 
-## Logging & callbacks
-- **Update** messages via `SetUpdateHandler(...)`
-- **Errors** via `SetErrorHandler(...)` (exceptions inside handlers are caught)
-- Optional: `SetTrafficUpdates(true)` for per‑send/recv logs
+## Logging & Callbacks
+- **Updates:** `SetUpdateHandler(...)`  
+- **Errors:** `SetErrorHandler(...)`  
+- **Traffic logs:** enable with `SetTrafficUpdates(true)`  
+All callbacks are executed on internal worker threads — synchronize UI access if needed.
 
+---
 
-## Windows headers & include order
-- If you need `<Windows.h>`, include it **after** the library headers or define `WIN32_LEAN_AND_MEAN` / `NOMINMAX` as appropriate.
-- You **do not** need to include `WinSock2First.h` directly — our headers ensure correct include order and will fail fast if something pulls in `winsock.h` first.
+## Include Order
+You don’t need to include `WinSock2First.h` manually.  
+Our headers enforce the correct order and will emit a compile-time error if `winsock.h` appears first.
+
+---
 
 ## Troubleshooting
-- **Include‑order error**: Ensure `winsock2.h` is included before any legacy `winsock.h` (the library enforces this).
-- **Link errors**: Confirm Platform (x86/x64) and Configuration (Debug/Release) match your installed package libs.
+| Issue | Resolution |
+|--------|-------------|
+| *Include order error* | Include SocketLibrary headers before `<Windows.h>` |
+| *Link errors* | Ensure platform/config (x86/x64, Debug/Release) matches the packaged libs |
+| *Address in use* | TCP server uses `SO_EXCLUSIVEADDRUSE` — close any other binders |
+| *Partial sends* | Indicates closed peer or fatal socket error; check your ErrorHandler |
+
+---
 
 ## License
 MIT (see `LICENSE` in the package).
 
-## Source, issues, docs
-GitHub: https://github.com/nruimveld7/SocketLibraryCPP
+## Source & Documentation
+GitHub: [https://github.com/nruimveld7/SocketLibraryCPP](https://github.com/nruimveld7/SocketLibraryCPP)
