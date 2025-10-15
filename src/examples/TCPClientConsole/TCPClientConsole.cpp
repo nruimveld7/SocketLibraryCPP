@@ -4,15 +4,17 @@
 #include <limits>
 #include <thread>
 #include <mutex>
+#include <atomic>
 
 #define NOMINMAX
-#define UDPSOCKET
+#define TCPSOCKET
 #include "SocketLibrary.h"
 #include <Windows.h>
 
 using namespace SocketLibrary;
 
-void OnRead(unsigned char* message, size_t byteCount, sockaddr_in sender);
+void OnRead(unsigned char* message, size_t byteCount);
+void OnDisconnect();
 void UpdateHandler(std::string message);
 void ErrorHandler(std::string message, int wsaCode);
 void PrintToConsole(const std::string& message);
@@ -38,9 +40,10 @@ int GetInt(
 HANDLE g_pipeRead = INVALID_HANDLE_VALUE;
 HANDLE g_pipeWrite = INVALID_HANDLE_VALUE;
 bool g_spawned = false;
-UDPServerSocket g_server;
+TCPClientSocket g_client;
 std::mutex g_managerLock;
 DWORD g_managerPid;
+std::atomic<bool> g_connected = false;
 
 int main(int argc, char* argv[]) {
   if(argc == 4) {
@@ -60,18 +63,20 @@ int main(int argc, char* argv[]) {
   if(!g_spawned) {
     std::cout << "Between messages, enter '/m' or '/c' to modify or close the socket respectively." << std::endl << std::endl;
   }
-  std::cout << "Ready To Communicate" << std::endl;
-  std::cout << "Enter '/n' to communicate with a new client" << std::endl;
-  std::cout << "Otherwise, begin typing the message to send" << std::endl;
   if(g_spawned) {
     std::thread monitor = std::thread(ManagerHandler);
     monitor.detach();
   }
   while(true) {
+    if(!g_connected && g_client.IsConnected()) {
+      g_connected = true;
+      std::cout << "Ready to communicate" << std::endl;
+      std::cout << "Begin typing the message to send" << std::endl;
+    }
     std::string input = "";
     std::getline(std::cin, input);
     if(!(g_managerLock.try_lock())) {
-      std::cout << "Waiting for g_server to finish..." << std::endl;
+      std::cout << "Waiting for server to finish..." << std::endl;
       std::lock_guard<std::mutex> lock(g_managerLock);
       InputHandler(input);
     } else {
@@ -81,9 +86,9 @@ int main(int argc, char* argv[]) {
   }
 }
 
-void OnRead(unsigned char* message, size_t byteCount, sockaddr_in sender) {
+void OnRead(unsigned char* message, size_t byteCount) {
   if(message == nullptr) {
-    PrintToConsole("Invalid Message");
+    PrintToConsole("Invalid message");
     return;
   }
   std::string str = "";
@@ -91,6 +96,11 @@ void OnRead(unsigned char* message, size_t byteCount, sockaddr_in sender) {
     str += static_cast<char>(message[i]);
   }
   PrintToConsole(str);
+}
+
+void OnDisconnect() {
+  g_connected = false;
+  PrintToConsole("Disconnected from server");
 }
 
 void UpdateHandler(std::string message) {
@@ -152,33 +162,13 @@ bool CheckManager() {
 }
 
 void InputHandler(std::string input) {
-  if(input == "/n") {
-    std::cout << "Setting up communications with a new client:" << std::endl;
-    std::string targetIP = "";
-    while(true) {
-      targetIP = GetString("Enter the target IP address: ");
-      if(Socket::CheckIP(targetIP)) {
-        break;
-      }
-    }
-    int targetPort = 0;
-    while(true) {
-      targetPort = GetInt("Enter the target port: ");
-      if(Socket::CheckPort(targetPort)) {
-        break;
-      }
-    }
-    std::cout << "Enter the message to send: ";
-    std::getline(std::cin, input);
-    g_server.Send(input.c_str(), static_cast<int>(input.size()), targetIP, targetPort);
-  } else if(input == "/m" && !g_spawned) {
-    g_server.Close();
+  if(input == "/m" && !g_spawned) {
+    g_client.Close();
     Configure();
   } else if(input == "/c" && !g_spawned) {
-    g_server.Close();
+    g_client.Close();
   } else {
-    std::cout << "Replying with: " << input << std::endl;
-    g_server.Send(input.c_str(), static_cast<int>(input.size()));
+    g_client.Send(input.c_str(), static_cast<int>(input.size()));
   }
 }
 
@@ -248,7 +238,7 @@ bool ManagerRequest() {
   std::string request = "";
   if(PipeRead(request)) {
     if(request == "Modify") {
-      g_server.Close();
+      g_client.Close();
       Configure();
     } else if(request == "Close") {
       return true;
@@ -258,21 +248,27 @@ bool ManagerRequest() {
 }
 
 void Configure() {
-  g_server.SetErrorHandler(ErrorHandler);
-  g_server.SetUpdateHandler(UpdateHandler);
-  g_server.SetOnRead(OnRead);
+  g_client.SetErrorHandler(ErrorHandler);
+  g_client.SetUpdateHandler(UpdateHandler);
+  g_client.SetOnRead(OnRead);
+  g_client.SetOnDisconnect(OnDisconnect);
   while(true) {
     while(true) {
-      if(g_server.SetServerIP(GetConfig("GetIP"))) {
+      if(g_client.SetServerIP(GetConfig("GetIP"))) {
         break;
       }
     }
     while(true) {
-      if(g_server.SetServerPort(GetConfig("GetPort"))) {
+      if(g_client.SetServerPort(GetConfig("GetPort"))) {
         break;
       }
     }
-    if(g_server.Open()) {
+    while(true) {
+      if(g_client.SetConnectionDelay(GetConfig("GetConnDelay"))) {
+        break;
+      }
+    }
+    if(g_client.Open()) {
       break;
     }
   }
@@ -295,7 +291,7 @@ std::string Trim(const std::string& str) {
 }
 
 void Close() {
-  g_server.Close();
+  g_client.Close();
   exit(0);
 }
 

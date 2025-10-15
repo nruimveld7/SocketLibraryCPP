@@ -19,8 +19,8 @@ namespace SocketLibrary {
     Socket& operator=(const Socket&) = delete;
     Socket(Socket&& other) noexcept;
     Socket& operator=(Socket&& other) noexcept;
-    void SetErrorHandler(std::function<void(const std::string& errorMessage)> errorHandler);
-    void SetUpdateHandler(std::function<void(const std::string& updateMessage)> updateHandler);
+    void SetErrorHandler(std::function<void(const std::string& message, int wsaCode)> errorHandler);
+    void SetUpdateHandler(std::function<void(const std::string& message)> updateHandler);
     std::string GetName() const noexcept;
     bool SetName(const std::string& name);
     std::string GetServerIP() const noexcept;
@@ -121,7 +121,7 @@ namespace SocketLibrary {
     std::atomic<bool> m_wsaRegistered;
     std::atomic<bool> m_configured;
     std::atomic<bool> m_trafficUpdates;
-    std::function<void(const std::string& errorMessage)> m_errorHandler;
+    std::function<void(const std::string& errorMessage, int wsaCode)> m_errorHandler;
     std::shared_mutex m_errorHandlerMutex;
     std::atomic<bool> m_errorHandlerFaulted;
     std::function<void(const std::string& updateMessage)> m_updateHandler;
