@@ -14,7 +14,7 @@ using namespace SocketLibrary;
 
 void OnRead(unsigned char* message, size_t byteCount, sockaddr_in sender);
 void UpdateHandler(std::string message);
-void ErrorHandler(std::string message);
+void ErrorHandler(std::string message, int wsaCode);
 void PrintToConsole(const std::string& message);
 void ManagerHandler();
 bool CheckManager();
@@ -26,7 +26,7 @@ std::string DecodeError(int errorCode);
 bool ManagerRequest();
 void Configure();
 std::string GetConfig(const std::string& param);
-std::string trim(const std::string& str);
+std::string Trim(const std::string& str);
 void Close();
 std::string GetString(std::string prompt);
 int GetInt(
@@ -35,47 +35,47 @@ int GetInt(
   int maxVal = std::numeric_limits<int>::max()
 );
 
-HANDLE pipeRead = INVALID_HANDLE_VALUE;
-HANDLE pipeWrite = INVALID_HANDLE_VALUE;
-bool spawned = false;
-UDPClientSocket client;
-std::mutex managerLock;
-DWORD managerPid;
+HANDLE g_pipeRead = INVALID_HANDLE_VALUE;
+HANDLE g_pipeWrite = INVALID_HANDLE_VALUE;
+bool g_spawned = false;
+UDPClientSocket g_client;
+std::mutex g_managerLock;
+DWORD g_managerPid;
 
 int main(int argc, char* argv[]) {
   if(argc == 4) {
-    pipeRead = reinterpret_cast<HANDLE>(std::stoull(argv[1]));
-    pipeWrite = reinterpret_cast<HANDLE>(std::stoull(argv[2]));
-    managerPid = std::stoi(argv[3]);
-    spawned = true;
+    g_pipeRead = reinterpret_cast<HANDLE>(std::stoull(argv[1]));
+    g_pipeWrite = reinterpret_cast<HANDLE>(std::stoull(argv[2]));
+    g_managerPid = std::stoi(argv[3]);
+    g_spawned = true;
   }
-  if(pipeRead == INVALID_HANDLE_VALUE || pipeWrite == INVALID_HANDLE_VALUE) {
-    pipeRead = GetStdHandle(STD_INPUT_HANDLE);
-    pipeWrite = GetStdHandle(STD_OUTPUT_HANDLE);
+  if(g_pipeRead == INVALID_HANDLE_VALUE || g_pipeWrite == INVALID_HANDLE_VALUE) {
+    g_pipeRead = GetStdHandle(STD_INPUT_HANDLE);
+    g_pipeWrite = GetStdHandle(STD_OUTPUT_HANDLE);
   }
-  std::cout << "Read Pipe: " << pipeRead << std::endl;
-  std::cout << "Write Pipe: " << pipeWrite << std::endl;
+  std::cout << "Read Pipe: " << g_pipeRead << std::endl;
+  std::cout << "Write Pipe: " << g_pipeWrite << std::endl;
   PipeWrite("OK");
   Configure();
-  if(!spawned) {
+  if(!g_spawned) {
     std::cout << "Between messages, enter '/m' or '/c' to modify or close the socket respectively." << std::endl << std::endl;
   }
   std::cout << "Ready To Communicate" << std::endl;
   std::cout << "Enter '/n' to communicate with a new server" << std::endl;
   std::cout << "Otherwise, begin typing the message to send" << std::endl;
-  if(spawned) {
+  if(g_spawned) {
     std::thread monitor = std::thread(ManagerHandler);
     monitor.detach();
   }
   while(true) {
     std::string input = "";
     std::getline(std::cin, input);
-    if(!(managerLock.try_lock())) {
+    if(!(g_managerLock.try_lock())) {
       std::cout << "Waiting for server to finish..." << std::endl;
-      std::lock_guard<std::mutex> lock(managerLock);
+      std::lock_guard<std::mutex> lock(g_managerLock);
       InputHandler(input);
     } else {
-      std::lock_guard<std::mutex> lock(managerLock, std::adopt_lock);
+      std::lock_guard<std::mutex> lock(g_managerLock, std::adopt_lock);
       InputHandler(input);
     }
   }
@@ -97,7 +97,7 @@ void UpdateHandler(std::string message) {
   PrintToConsole(message);
 }
 
-void ErrorHandler(std::string message) {
+void ErrorHandler(std::string message, int wsaCode) {
   PrintToConsole(message);
 }
 
@@ -113,7 +113,7 @@ void ManagerHandler() {
     }
     bool closedByManager = false;
     if(PipeCheck()) {
-      std::lock_guard<std::mutex> lock(managerLock);
+      std::lock_guard<std::mutex> lock(g_managerLock);
       closedByManager = ManagerRequest();
     }
     if(closedByManager) {
@@ -123,12 +123,12 @@ void ManagerHandler() {
 }
 
 bool CheckManager() {
-  HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, managerPid);
+  HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, g_managerPid);
   if(hProcess == nullptr) {
     std::cerr << "Error opening process: " << DecodeError(GetLastError()) << std::endl;
-    pipeRead = GetStdHandle(STD_INPUT_HANDLE);
-    pipeWrite = GetStdHandle(STD_OUTPUT_HANDLE);
-    spawned = false;
+    g_pipeRead = GetStdHandle(STD_INPUT_HANDLE);
+    g_pipeWrite = GetStdHandle(STD_OUTPUT_HANDLE);
+    g_spawned = false;
     return false;
   }
   DWORD exitCode;
@@ -138,16 +138,16 @@ bool CheckManager() {
       return true;
     } else {
       CloseHandle(hProcess);
-      pipeRead = GetStdHandle(STD_INPUT_HANDLE);
-      pipeWrite = GetStdHandle(STD_OUTPUT_HANDLE);
-      spawned = false;
+      g_pipeRead = GetStdHandle(STD_INPUT_HANDLE);
+      g_pipeWrite = GetStdHandle(STD_OUTPUT_HANDLE);
+      g_spawned = false;
       return false;
     }
   }
   CloseHandle(hProcess);
-  pipeRead = GetStdHandle(STD_INPUT_HANDLE);
-  pipeWrite = GetStdHandle(STD_OUTPUT_HANDLE);
-  spawned = false;
+  g_pipeRead = GetStdHandle(STD_INPUT_HANDLE);
+  g_pipeWrite = GetStdHandle(STD_OUTPUT_HANDLE);
+  g_spawned = false;
   return false;
 }
 
@@ -170,26 +170,26 @@ void InputHandler(std::string input) {
     }
     std::cout << "Enter the message to send: ";
     std::getline(std::cin, input);
-    client.Send(input.c_str(), static_cast<int>(input.size()), targetIP, targetPort);
-  } else if(input == "/m" && !spawned) {
-    client.Close();
+    g_client.Send(input.c_str(), static_cast<int>(input.size()), targetIP, targetPort);
+  } else if(input == "/m" && !g_spawned) {
+    g_client.Close();
     Configure();
-  } else if(input == "/c" && !spawned) {
-    client.Close();
+  } else if(input == "/c" && !g_spawned) {
+    g_client.Close();
   } else {
     std::cout << "Replying with: " << input << std::endl;
-    client.Send(input.c_str(), static_cast<int>(input.size()));
+    g_client.Send(input.c_str(), static_cast<int>(input.size()));
   }
 }
 
 bool PipeWrite(std::string data) {
-  if(!spawned) {
+  if(!g_spawned) {
     data += "\n";
   } else {
     PrintToConsole("Sending " + data + " to the manager");
   }
   DWORD bytesWritten;
-  BOOL success = WriteFile(pipeWrite, data.c_str(), static_cast<DWORD>(data.size()), &bytesWritten, NULL);
+  BOOL success = WriteFile(g_pipeWrite, data.c_str(), static_cast<DWORD>(data.size()), &bytesWritten, NULL);
   if(!success || bytesWritten != data.size()) {
     std::cerr << "Failed to write to pipe! Error: " << DecodeError(GetLastError()) << std::endl;
     return false;
@@ -200,13 +200,13 @@ bool PipeWrite(std::string data) {
 bool PipeRead(std::string& data) {
   char buffer[256];
   DWORD bytesRead;
-  BOOL success = ReadFile(pipeRead, buffer, sizeof(buffer), &bytesRead, NULL);
+  BOOL success = ReadFile(g_pipeRead, buffer, sizeof(buffer), &bytesRead, NULL);
   if(!success || bytesRead == 0) {
     std::cerr << "Failed to read from pipe! Error: " << DecodeError(GetLastError()) << std::endl;
     return false;
   }
   data.assign(buffer, bytesRead);
-  if(spawned) {
+  if(g_spawned) {
     PrintToConsole("Received " + data + " from the manager");
   }
   return true;
@@ -214,7 +214,7 @@ bool PipeRead(std::string& data) {
 
 bool PipeCheck() {
   DWORD bytesAvailable = 0;
-  if(PeekNamedPipe(pipeRead, nullptr, 0, nullptr, &bytesAvailable, nullptr)) {
+  if(PeekNamedPipe(g_pipeRead, nullptr, 0, nullptr, &bytesAvailable, nullptr)) {
     return bytesAvailable > 0;
   }
   return false;
@@ -248,7 +248,7 @@ bool ManagerRequest() {
   std::string request = "";
   if(PipeRead(request)) {
     if(request == "Modify") {
-      client.Close();
+      g_client.Close();
       Configure();
     } else if(request == "Close") {
       return true;
@@ -258,21 +258,21 @@ bool ManagerRequest() {
 }
 
 void Configure() {
-  client.SetErrorHandler(ErrorHandler);
-  client.SetUpdateHandler(UpdateHandler);
-  client.SetOnRead(OnRead);
+  g_client.SetErrorHandler(ErrorHandler);
+  g_client.SetUpdateHandler(UpdateHandler);
+  g_client.SetOnRead(OnRead);
   while(true) {
     while(true) {
-      if(client.SetServerIP(GetConfig("GetIP"))) {
+      if(g_client.SetServerIP(GetConfig("GetIP"))) {
         break;
       }
     }
     while(true) {
-      if(client.SetServerPort(GetConfig("GetPort"))) {
+      if(g_client.SetServerPort(GetConfig("GetPort"))) {
         break;
       }
     }
-    if(client.Open()) {
+    if(g_client.Open()) {
       break;
     }
   }
@@ -285,17 +285,17 @@ std::string GetConfig(const std::string& param) {
   while(!PipeRead(value)) {
     CheckManager();
   }
-  return trim(value);
+  return Trim(value);
 }
 
-std::string trim(const std::string& str) {
+std::string Trim(const std::string& str) {
   auto start = std::find_if_not(str.begin(), str.end(), ::isspace);
   auto end = std::find_if_not(str.rbegin(), str.rend(), ::isspace).base();
   return (start < end) ? std::string(start, end) : "";
 }
 
 void Close() {
-  client.Close();
+  g_client.Close();
   exit(0);
 }
 

@@ -59,7 +59,7 @@ namespace SocketLibrary {
     return *this;
   }
 
-  void Socket::SetErrorHandler(std::function<void(const std::string& errorMessage)> errorHandler) {
+  void Socket::SetErrorHandler(std::function<void(const std::string& errorMessage, int code)> errorHandler) {
     std::unique_lock lock(m_errorHandlerMutex);
     m_errorHandler = std::move(errorHandler);
     m_errorHandlerFaulted.store(false, std::memory_order_release);
@@ -449,12 +449,20 @@ namespace SocketLibrary {
 
   bool Socket::ShutDownSocket(SOCKET& socketToShutDown) {
     if(::shutdown(socketToShutDown, SD_BOTH) == SOCKET_ERROR) {
-      ErrorInterpreter("Error shutting down socket: ", true);
-      return false;
-    } else {
-      UpdateInterpreter("Shut down socket");
-      return true;
+      const int error = ::WSAGetLastError();
+      switch(error) {
+        case WSAENOTCONN:
+        case WSAESHUTDOWN:
+        case WSAEINVAL:
+        case WSAENOTSOCK:
+          break;
+        default:
+          ErrorInterpreter("Error shutting down socket: ", true);
+          return false;
+      }
     }
+    UpdateInterpreter("Shut down socket");
+    return true;
   }
 
   bool Socket::GetRegistered() const noexcept {
@@ -486,13 +494,14 @@ namespace SocketLibrary {
 
   void Socket::ErrorInterpreter(const std::string& errorMessage, bool hasCode) {
     std::string message = errorMessage;
+    int code = 0;
     if(hasCode) {
-      int code = WSAGetLastError();
+      code = WSAGetLastError();
       message += std::to_string(code);
       message += " - ";
       message += DecodeSocketError(code);
     }
-    std::function<void(const std::string& errorMessage)> callback;
+    std::function<void(const std::string& errorMessage, int wsaCode)> callback;
     {
       std::shared_lock lock(m_errorHandlerMutex);
       callback = m_errorHandler;
@@ -501,7 +510,7 @@ namespace SocketLibrary {
       return;
     }
     try {
-      callback(message);
+      callback(message, code);
     } catch(const std::exception& e) {
       m_errorHandlerFaulted.store(true, std::memory_order_release);
       FallbackLog("ErrorHandler callback exception:");
