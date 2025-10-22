@@ -44,14 +44,24 @@ DWORD g_managerPid;
 
 int main(int argc, char* argv[]) {
   if(argc == 4) {
-    g_pipeRead = reinterpret_cast<HANDLE>(std::stoull(argv[1]));
-    g_pipeWrite = reinterpret_cast<HANDLE>(std::stoull(argv[2]));
-    g_managerPid = std::stoi(argv[3]);
-    g_spawned = true;
+    try {
+      const uintptr_t readHandle = static_cast<uintptr_t>(std::stoull(argv[1]));
+      const uintptr_t writeHandle = static_cast<uintptr_t>(std::stoull(argv[2]));
+      g_pipeRead = reinterpret_cast<HANDLE>(readHandle);
+      g_pipeWrite = reinterpret_cast<HANDLE>(writeHandle);
+      g_managerPid = static_cast<DWORD>(std::stoul(argv[3]));
+      g_spawned = (g_pipeRead && g_pipeRead != INVALID_HANDLE_VALUE && g_pipeWrite && g_pipeRead != INVALID_HANDLE_VALUE);
+    } catch(...) {
+      g_spawned = false;
+    }
   }
-  if(g_pipeRead == INVALID_HANDLE_VALUE || g_pipeWrite == INVALID_HANDLE_VALUE) {
+  if(!g_spawned) {
     g_pipeRead = GetStdHandle(STD_INPUT_HANDLE);
     g_pipeWrite = GetStdHandle(STD_OUTPUT_HANDLE);
+  }
+  if(!g_pipeRead || g_pipeRead == INVALID_HANDLE_VALUE || !g_pipeWrite || g_pipeWrite == INVALID_HANDLE_VALUE) {
+    std::cerr << "Invalid pipe/std handles.\n";
+    return 1;
   }
   std::cout << "Read Pipe: " << g_pipeRead << std::endl;
   std::cout << "Write Pipe: " << g_pipeWrite << std::endl;
@@ -191,10 +201,17 @@ bool PipeWrite(std::string data) {
 }
 
 bool PipeRead(std::string& data) {
+  if(!g_pipeRead || g_pipeRead == INVALID_HANDLE_VALUE) {
+    std::cerr << "Invalid pipe read handle!" << std::endl;
+    return false;
+  }
+  DWORD available = 0;
+  if(!PeekNamedPipe(g_pipeRead, nullptr, 0, nullptr, &available, nullptr) || available == 0) {
+    return false;
+  }
   char buffer[256];
   DWORD bytesRead;
-  BOOL success = ReadFile(g_pipeRead, buffer, sizeof(buffer), &bytesRead, NULL);
-  if(!success || bytesRead == 0) {
+  if(!ReadFile(g_pipeRead, buffer, sizeof(buffer), &bytesRead, NULL) || bytesRead == 0) {
     std::cerr << "Failed to read from pipe! Error: " << DecodeError(GetLastError()) << std::endl;
     return false;
   }
@@ -283,12 +300,22 @@ void Configure() {
 }
 
 std::string GetConfig(const std::string& param) {
-  while(!PipeWrite(param));
-  std::string value = "";
-  while(!PipeRead(value)) {
+  while(!PipeWrite(param)) {
     CheckManager();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  return Trim(value);
+  std::string value;
+  while(true) {
+    if(PipeRead(value)) {
+      return Trim(value);
+    }
+    if(!CheckManager) {
+      PrintToConsole("Manager process has exited. Exiting...");
+      return Trim(GetString(param + ": "));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return std::string{};
 }
 
 std::string Trim(const std::string& str) {

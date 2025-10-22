@@ -14,7 +14,7 @@
   <Choose>
     <When Condition="'$(UseRepoLayout)'=='true' and '$(MSBuildProjectExtension)'=='.vcxproj'">
       <PropertyGroup Condition="'$(ConfigurationType)'!='StaticLibrary'">
-        <OutDir>$(RepoRoot)bin\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</OutDir>
+        <OutDir>$(RepoRoot)bin\$(Platform)\$(Configuration)\</OutDir>
         <IntDir>$(RepoRoot)intermediate\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</IntDir>
       </PropertyGroup>
     </When>
