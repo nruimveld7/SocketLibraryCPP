@@ -4,6 +4,7 @@
 #include <limits>
 #include <thread>
 #include <mutex>
+#include <future>
 
 #define NOMINMAX
 #define UDPSOCKET
@@ -70,18 +71,30 @@ int main(int argc, char* argv[]) {
   if(!g_spawned) {
     std::cout << "Between messages, enter '/m' or '/c' to modify or close the socket respectively." << std::endl << std::endl;
   }
-  std::cout << "Ready To Communicate" << std::endl;
+  std::cout << "Ready to communicate" << std::endl;
   std::cout << "Enter '/n' to communicate with a new client" << std::endl;
   std::cout << "Otherwise, begin typing the message to send" << std::endl;
   if(g_spawned) {
     std::thread monitor = std::thread(ManagerHandler);
     monitor.detach();
   }
+  auto GetLine = [] {
+    return std::async(std::launch::async, [] {
+      std::string input;
+      std::getline(std::cin, input);
+      return input;
+    });
+  };
+  std::future<std::string> line = GetLine();
   while(true) {
-    std::string input = "";
-    std::getline(std::cin, input);
+    if(!(line.valid() && line.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(25));
+      continue;
+    }
+    std::string input = line.get();
+    line = GetLine();
     if(!(g_managerLock.try_lock())) {
-      std::cout << "Waiting for g_server to finish..." << std::endl;
+      std::cout << "Waiting for server to finish..." << std::endl;
       std::lock_guard<std::mutex> lock(g_managerLock);
       InputHandler(input);
     } else {
@@ -93,7 +106,7 @@ int main(int argc, char* argv[]) {
 
 void OnRead(unsigned char* message, size_t byteCount, sockaddr_in sender) {
   if(message == nullptr) {
-    PrintToConsole("Invalid Message");
+    PrintToConsole("Invalid message");
     return;
   }
   std::string str = "";
@@ -212,9 +225,11 @@ bool PipeRead(std::string& data) {
     std::cerr << "Invalid pipe read handle!" << std::endl;
     return false;
   }
-  DWORD available = 0;
-  if(!PeekNamedPipe(g_pipeRead, nullptr, 0, nullptr, &available, nullptr) || available == 0) {
-    return false;
+  if(g_spawned) {
+    DWORD available = 0;
+    if(!PeekNamedPipe(g_pipeRead, nullptr, 0, nullptr, &available, nullptr) || available == 0) {
+      return false;
+    }
   }
   char buffer[256];
   DWORD bytesRead;
@@ -297,22 +312,40 @@ void Configure() {
 }
 
 std::string GetConfig(const std::string& param) {
-  while(!PipeWrite(param));
-  std::string value = "";
-  while(!PipeRead(value)) {
+  while(!PipeWrite(param)) {
     CheckManager();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  return Trim(value);
+  std::string value;
+  while(true) {
+    if(PipeRead(value)) {
+      return Trim(value);
+    }
+    if(!CheckManager()) {
+      PrintToConsole("Manager process has exited. Exiting...");
+      return Trim(GetString(param + ": "));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return std::string{};
 }
 
 std::string Trim(const std::string& str) {
-  auto start = std::find_if_not(str.begin(), str.end(), ::isspace);
-  auto end = std::find_if_not(str.rbegin(), str.rend(), ::isspace).base();
-  return (start < end) ? std::string(start, end) : "";
+  auto start = std::find_if_not(str.begin(), str.end(), [](unsigned char c) { return std::isspace(c); });
+  auto end = std::find_if_not(str.rbegin(), str.rend(), [](unsigned char c) { return std::isspace(c); }).base();
+  return (start < end) ? std::string(start, end) : std::string{};
 }
 
 void Close() {
   g_server.Close();
+  if(g_pipeRead && g_pipeRead != INVALID_HANDLE_VALUE) {
+    CloseHandle(g_pipeRead);
+    g_pipeRead = INVALID_HANDLE_VALUE;
+  }
+  if(g_pipeWrite && g_pipeWrite != INVALID_HANDLE_VALUE) {
+    CloseHandle(g_pipeWrite);
+    g_pipeWrite = INVALID_HANDLE_VALUE;
+  }
   exit(0);
 }
 

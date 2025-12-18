@@ -7,20 +7,25 @@
     <SocketLibraryCPP_LibName Condition="'$(SocketLibraryCPP_LibName)'==''">SocketLibraryCPP.lib</SocketLibraryCPP_LibName>
     <SocketLibraryCPP_IncludeDir Condition="'$(SocketLibraryCPP_IncludeDir)'==''">$(SocketLibraryCPP_PackageRoot)include</SocketLibraryCPP_IncludeDir>
 
-    <!-- Default the binary config to the consumer’s $(Configuration) -->
+    <!-- Default the binary config to the consumer's $(Configuration) -->
     <SocketLibraryCPP_BinaryConfig Condition="'$(SocketLibraryCPP_BinaryConfig)'==''">$(Configuration)</SocketLibraryCPP_BinaryConfig>
+    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and '$(RuntimeLibrary)'=='MultiThreadedDLL'">md</SocketLibraryCPP_RuntimeFlavor>
+    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and '$(RuntimeLibrary)'=='MultiThreaded'">mt</SocketLibraryCPP_RuntimeFlavor>
+    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and '$(RuntimeLibrary)'=='MultiThreadedDebugDLL'">mdd</SocketLibraryCPP_RuntimeFlavor>
+    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and '$(RuntimeLibrary)'=='MultiThreadedDebug'">mtd</SocketLibraryCPP_RuntimeFlavor>
+    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'==''">md</SocketLibraryCPP_RuntimeFlavor>
   </PropertyGroup>
 
-  <!-- Compute LibDir, fall back to Release if exact match not present -->
+  <!-- Compute LibDir (Platform + Runtime flavor + Config), fall back to Release if exact match not present -->
   <Choose>
-    <When Condition="Exists('$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_BinaryConfig)\$(SocketLibraryCPP_LibName)')">
+    <When Condition="Exists('$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_RuntimeFlavor)\$(SocketLibraryCPP_BinaryConfig)\$(SocketLibraryCPP_LibName)')">
       <PropertyGroup>
-        <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_BinaryConfig)\</SocketLibraryCPP_LibDir>
+        <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_RuntimeFlavor)\$(SocketLibraryCPP_BinaryConfig)\</SocketLibraryCPP_LibDir>
       </PropertyGroup>
     </When>
     <Otherwise>
       <PropertyGroup>
-        <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\Release\</SocketLibraryCPP_LibDir>
+        <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_RuntimeFlavor)\Release\</SocketLibraryCPP_LibDir>
       </PropertyGroup>
     </Otherwise>
   </Choose>

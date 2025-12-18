@@ -60,6 +60,11 @@ $pairsRaw = foreach ($n in $pcNodes) {
 }
 $pairs = $pairsRaw | Sort-Object Platform, Configuration -Unique
 
+function Get-RuntimeFlavorsForConfiguration([string]$configuration) {
+  if ($configuration -match 'Debug') { return @('mdd','mtd') }
+  return @('md','mt')
+}
+
 # -- Single run log setup --
 $RunStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $RunLog   = Join-Path $LogsDir ("PackNuGet_{0}.log" -f $RunStamp)
@@ -73,6 +78,7 @@ $RunLog   = Join-Path $LogsDir ("PackNuGet_{0}.log" -f $RunStamp)
 "nuget   : $NuGetExe"                                                  | Out-File -FilePath $RunLog -Append
 $pairList = ($pairs | ForEach-Object { "$($_.Configuration)|$($_.Platform)" }) -join ', '
 "Pairs   : $pairList"                                                  | Out-File -FilePath $RunLog -Append
+"Flavors : Debug -> mdd/mtd, else md/mt"                               | Out-File -FilePath $RunLog -Append
 "======================================================================" | Out-File -FilePath $RunLog -Append
 
 # -- Staging sanity check (robust to 0/1/many files) --
@@ -84,17 +90,20 @@ function Get-ArrayCount($x) { ($x | Measure-Object).Count }  # safe count
 
 if (Test-Path -LiteralPath $LibStage) {
   foreach ($p in $pairs) {
-    $expectDir = Join-Path $LibStage (Join-Path $p.Platform $p.Configuration)
-    $libs = @()
-    if (Test-Path -LiteralPath $expectDir) {
-      # force to array; match .lib or .a
-      $libs = @(Get-ChildItem -LiteralPath $expectDir -File -Include *.lib,*.a -ErrorAction SilentlyContinue)
+    $flavors = Get-RuntimeFlavorsForConfiguration $p.Configuration
+    foreach ($flavor in $flavors) {
+      $expectDir = Join-Path $LibStage (Join-Path $p.Platform (Join-Path $flavor $p.Configuration))
+      $libs = @()
+      if (Test-Path -LiteralPath $expectDir) {
+        # force to array; match .lib or .a
+        $libs = @(Get-ChildItem -LiteralPath $expectDir -File -Include *.lib,*.a -ErrorAction SilentlyContinue)
+      }
+      $libCount = Get-ArrayCount $libs
+      $msg  = if ($libCount -gt 0) { "OK   $($p.Configuration)|$($p.Platform)|$flavor  -> $expectDir  ($libCount lib file(s))" }
+              else                  { "MISS $($p.Configuration)|$($p.Platform)|$flavor  -> $expectDir  (no lib files found)" }
+      Write-Host $msg
+      $msg | Out-File -FilePath $RunLog -Append
     }
-    $libCount = Get-ArrayCount $libs
-    $msg  = if ($libCount -gt 0) { "OK   $($p.Configuration)|$($p.Platform)  -> $expectDir  ($libCount lib file(s))" }
-            else                  { "MISS $($p.Configuration)|$($p.Platform)  -> $expectDir  (no lib files found)" }
-    Write-Host $msg
-    $msg | Out-File -FilePath $RunLog -Append
   }
 } else {
   Write-Host "Staging root not found; skipping per-pair check."

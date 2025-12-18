@@ -70,17 +70,20 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'==''">md</SocketLibraryCPP_RuntimeFlavor>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <OutDir>$(RepoRoot)lib\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</OutDir>
+    <OutDir>$(RepoRoot)lib\$(MSBuildProjectName)\$(Platform)\$(SocketLibraryCPP_RuntimeFlavor)\$(Configuration)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <OutDir>$(RepoRoot)lib\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</OutDir>
+    <OutDir>$(RepoRoot)lib\$(MSBuildProjectName)\$(Platform)\$(SocketLibraryCPP_RuntimeFlavor)\$(Configuration)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(RepoRoot)lib\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</OutDir>
+    <OutDir>$(RepoRoot)lib\$(MSBuildProjectName)\$(Platform)\$(SocketLibraryCPP_RuntimeFlavor)\$(Configuration)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(RepoRoot)lib\$(MSBuildProjectName)\$(Platform)\$(Configuration)\</OutDir>
+    <OutDir>$(RepoRoot)lib\$(MSBuildProjectName)\$(Platform)\$(SocketLibraryCPP_RuntimeFlavor)\$(Configuration)\</OutDir>
   </PropertyGroup>
   <PropertyGroup Label="OutputLayout">
     <TargetName>SocketLibraryCPP</TargetName>
@@ -95,6 +98,10 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(SolutionDir)include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='md'">MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mdd'">MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mt'">MultiThreaded</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mtd'">MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -117,6 +124,10 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>$(SolutionDir)include</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='md'">MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mdd'">MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mt'">MultiThreaded</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mtd'">MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -139,6 +150,10 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>$(SolutionDir)include</AdditionalIncludeDirectories>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='md'">MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mdd'">MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mt'">MultiThreaded</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mtd'">MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -161,6 +176,10 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>$(SolutionDir)include</AdditionalIncludeDirectories>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='md'">MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mdd'">MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mt'">MultiThreaded</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='mtd'">MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>

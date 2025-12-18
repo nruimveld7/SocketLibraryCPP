@@ -517,8 +517,8 @@ bool ConfigSocket(Socket& socket) {
         response = std::to_string(GetInt("Enter the port number: ", 0, 65535));
       } else if(command == "GetMsgLen") {
         response = std::to_string(GetInt("Enter the maximum message length: ", 1, 100000));
-      } else if(command == "GetLstnBuff") {
-        response = std::to_string(GetInt("Enter the listen buffer size: ", 1, 20));
+      } else if(command == "GetLstnBklg") {
+        response = std::to_string(GetInt("Enter the listen backlog size: ", 1, 20));
       } else if(command == "GetMaxConn") {
         response = std::to_string(GetInt("Enter the maximum allowed connections: ", 1, 20));
       } else if(command == "GetConnDelay") {

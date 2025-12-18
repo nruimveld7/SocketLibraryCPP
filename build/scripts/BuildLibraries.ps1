@@ -43,6 +43,11 @@ $pairsRaw = foreach ($n in $pcNodes) {
 if (-not $pairsRaw -or $pairsRaw.Count -eq 0) { throw "No Configuration|Platform pairs discovered in $ProjPath" }
 $pairs = $pairsRaw | Sort-Object Platform, Configuration -Unique
 
+function Get-RuntimeFlavorsForConfiguration([string]$configuration) {
+  if ($configuration -match 'Debug') { return @('mdd','mtd') }
+  return @('md','mt')
+}
+
 # -- Single run log setup --
 $LogsDir  = Join-Path $RepoRoot 'build\logs'
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
@@ -57,61 +62,62 @@ $RunLog   = Join-Path $LogsDir ("BuildLibs_{0}.log" -f $RunStamp)
 "MSBuild : $MSBuild"                                                    | Out-File -FilePath $RunLog -Append
 $pairList = ($pairs | ForEach-Object { "$($_.Configuration)|$($_.Platform)" }) -join ', '
 "Pairs   : $pairList"                                                   | Out-File -FilePath $RunLog -Append
+"Flavors : Debug -> mdd/mtd, else md/mt"                                | Out-File -FilePath $RunLog -Append
 "======================================================================" | Out-File -FilePath $RunLog -Append
 
 # -- Build loop (append all output to the same file) --
 $errors = @()
 foreach ($p in $pairs) {
-  $cfg   = $p.Configuration
-  $plt   = $p.Platform
-  $label = "$cfg|$plt"
-
-  $sep = 'â”€' * 70
-  Write-Host "`n$sep`nBuilding $label`n$sep"
-  @(
-    ""
-    $sep
-    "BEGIN BUILD: $label"
-    "Start: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"
-    $sep
-    ""
-  ) | Out-File -FilePath $RunLog -Append
-
-  & $MSBuild $ProjPath `
-    /nologo `
-    /m `
-    /v:m `
-    /t:Build `
-    /p:Configuration=$cfg `
-    /p:Platform=$plt `
-    /p:SolutionDir="$RepoRoot\" *>&1 | Tee-Object -FilePath $RunLog -Append
-
-  if ($LASTEXITCODE) {
-    $msg = "BUILD FAILED: $label (see $RunLog)"
-    $errors += $msg
+  $cfg     = $p.Configuration
+  $plt     = $p.Platform
+  $flavors = Get-RuntimeFlavorsForConfiguration $cfg
+  foreach ($flavor in $flavors) {
+    $label = "$cfg|$plt|$flavor"
+    $sep = 'Ä' * 70
+    Write-Host "`n$sep`nBuilding $label`n$sep"
     @(
       ""
-      "RESULT: FAILED ($label)"
-      "End:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"
       $sep
-    ) | Out-File -FilePath $RunLog -Append
-    Write-Host $msg -ForegroundColor Red
-    break
-  } else {
-    @(
+      "BEGIN BUILD: $label"
+      "Start: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"
+      $sep
       ""
-      "RESULT: SUCCESS ($label)"
-      "End:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"
-      $sep
     ) | Out-File -FilePath $RunLog -Append
+    & $MSBuild $ProjPath `
+      /nologo `
+      /m `
+      /v:m `
+      /t:Build `
+      /p:Configuration=$cfg `
+      /p:Platform=$plt `
+      /p:SocketLibraryCPP_RuntimeFlavor=$flavor `
+      /p:SolutionDir="$RepoRoot\" *>&1 | Tee-Object -FilePath $RunLog -Append
+    if ($LASTEXITCODE) {
+      $msg = "BUILD FAILED: $label (see $RunLog)"
+      $errors += $msg
+      @(
+        ""
+        "RESULT: FAILED ($label)"
+        "End:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"
+        $sep
+      ) | Out-File -FilePath $RunLog -Append
+      Write-Host $msg -ForegroundColor Red
+      break
+    } else {
+      @(
+        ""
+        "RESULT: SUCCESS ($label)"
+        "End:    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"
+        $sep
+      ) | Out-File -FilePath $RunLog -Append
+    }
   }
+  if ($errors.Count -gt 0) { break }
 }
-
 if ($errors.Count -gt 0) {
   Write-Host "`nOne or more builds failed." -ForegroundColor Red
   Write-Host "Log: $RunLog"
   exit 1
 }
-
 Write-Host "`nAll configurations built successfully." -ForegroundColor Green
 Write-Host "Log: $RunLog"

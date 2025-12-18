@@ -5,6 +5,7 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <future>
 
 #define NOMINMAX
 #define TCPSOCKET
@@ -77,14 +78,26 @@ int main(int argc, char* argv[]) {
     std::thread monitor = std::thread(ManagerHandler);
     monitor.detach();
   }
+  auto GetLine = [] {
+    return std::async(std::launch::async, [] {
+      std::string input;
+      std::getline(std::cin, input);
+      return input;
+    });
+  };
+  std::future<std::string> line = GetLine();
   while(true) {
     if(!g_connected && g_client.IsConnected()) {
       g_connected = true;
       std::cout << "Ready to communicate" << std::endl;
       std::cout << "Begin typing the message to send" << std::endl;
     }
-    std::string input = "";
-    std::getline(std::cin, input);
+    if(!(line.valid() && line.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(25));
+      continue;
+    }
+    std::string input = line.get();
+    line = GetLine();
     if(!(g_managerLock.try_lock())) {
       std::cout << "Waiting for server to finish..." << std::endl;
       std::lock_guard<std::mutex> lock(g_managerLock);
@@ -202,9 +215,11 @@ bool PipeRead(std::string& data) {
     std::cerr << "Invalid pipe read handle!" << std::endl;
     return false;
   }
-  DWORD available = 0;
-  if(!PeekNamedPipe(g_pipeRead, nullptr, 0, nullptr, &available, nullptr) || available == 0) {
-    return false;
+  if(g_spawned) {
+    DWORD available = 0;
+    if(!PeekNamedPipe(g_pipeRead, nullptr, 0, nullptr, &available, nullptr) || available == 0) {
+      return false;
+    }
   }
   char buffer[256];
   DWORD bytesRead;
@@ -302,7 +317,7 @@ std::string GetConfig(const std::string& param) {
     if(PipeRead(value)) {
       return Trim(value);
     }
-    if(!CheckManager) {
+    if(!CheckManager()) {
       PrintToConsole("Manager process has exited. Exiting...");
       return Trim(GetString(param + ": "));
     }
