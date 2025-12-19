@@ -20,6 +20,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="Macros.props" />
     <None Include="packages.config" />
   </ItemGroup>
 </Project>

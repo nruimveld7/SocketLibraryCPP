@@ -59,11 +59,7 @@ $pairsRaw = foreach ($n in $pcNodes) {
   [pscustomobject]@{ Configuration = $cp[0]; Platform = $cp[1] }
 }
 $pairs = $pairsRaw | Sort-Object Platform, Configuration -Unique
-
-function Get-RuntimeFlavorsForConfiguration([string]$configuration) {
-  if ($configuration -match 'Debug') { return @('mdd','mtd') }
-  return @('md','mt')
-}
+$runtimeFlavors = @('md','mt','mdd','mtd')
 
 # -- Single run log setup --
 $RunStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
@@ -78,7 +74,7 @@ $RunLog   = Join-Path $LogsDir ("PackNuGet_{0}.log" -f $RunStamp)
 "nuget   : $NuGetExe"                                                  | Out-File -FilePath $RunLog -Append
 $pairList = ($pairs | ForEach-Object { "$($_.Configuration)|$($_.Platform)" }) -join ', '
 "Pairs   : $pairList"                                                  | Out-File -FilePath $RunLog -Append
-"Flavors : Debug -> mdd/mtd, else md/mt"                               | Out-File -FilePath $RunLog -Append
+"Flavors : md, mt, mdd, mtd (all combinations per pair)"               | Out-File -FilePath $RunLog -Append
 "======================================================================" | Out-File -FilePath $RunLog -Append
 
 # -- Staging sanity check (robust to 0/1/many files) --
@@ -90,8 +86,7 @@ function Get-ArrayCount($x) { ($x | Measure-Object).Count }  # safe count
 
 if (Test-Path -LiteralPath $LibStage) {
   foreach ($p in $pairs) {
-    $flavors = Get-RuntimeFlavorsForConfiguration $p.Configuration
-    foreach ($flavor in $flavors) {
+    foreach ($flavor in $runtimeFlavors) {
       $expectDir = Join-Path $LibStage (Join-Path $p.Platform (Join-Path $flavor $p.Configuration))
       $libs = @()
       if (Test-Path -LiteralPath $expectDir) {

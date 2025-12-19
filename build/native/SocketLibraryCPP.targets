@@ -1,18 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- Map VS platform names to the on-disk folder names (user-overridable) -->
+  <PropertyGroup>
+    <SocketLibraryCPP_PlatformDir Condition="'$(SocketLibraryCPP_PlatformDir)'=='' and '$(Platform)'=='Win32'">Win32</SocketLibraryCPP_PlatformDir>
+    <SocketLibraryCPP_PlatformDir Condition="'$(SocketLibraryCPP_PlatformDir)'==''">$(Platform)</SocketLibraryCPP_PlatformDir>
+  </PropertyGroup>
+
+  <Target Name="SocketLibraryCPP_ResolveAndInject" BeforeTargets="Link">
+    <PropertyGroup>
+      <_SocketLibraryCPP_RuntimeLibrary>@(ClCompile->'%(RuntimeLibrary)')</_SocketLibraryCPP_RuntimeLibrary>
+      <_SocketLibraryCPP_RuntimeLibraryUpper Condition="'$(_SocketLibraryCPP_RuntimeLibrary)'!=''">$([System.String]::Copy('$(_SocketLibraryCPP_RuntimeLibrary)').ToUpperInvariant())</_SocketLibraryCPP_RuntimeLibraryUpper>
+
+      <SocketLibraryCPP_RuntimeFlavor Condition="$([System.String]::Copy('$(_SocketLibraryCPP_RuntimeLibraryUpper)').Contains('MULTITHREADEDDEBUGDLL'))">mdd</SocketLibraryCPP_RuntimeFlavor>
+      <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and $([System.String]::Copy('$(_SocketLibraryCPP_RuntimeLibraryUpper)').Contains('MULTITHREADEDDEBUG'))">mtd</SocketLibraryCPP_RuntimeFlavor>
+      <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and $([System.String]::Copy('$(_SocketLibraryCPP_RuntimeLibraryUpper)').Contains('MULTITHREADEDDLL'))">md</SocketLibraryCPP_RuntimeFlavor>
+      <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and $([System.String]::Copy('$(_SocketLibraryCPP_RuntimeLibraryUpper)').Contains('MULTITHREADED'))">mt</SocketLibraryCPP_RuntimeFlavor>
+
+      <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and '$(UseDebugLibraries)'=='true'">mdd</SocketLibraryCPP_RuntimeFlavor>
+      <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'==''">md</SocketLibraryCPP_RuntimeFlavor>
+
+      <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(SocketLibraryCPP_PlatformDir)\$(SocketLibraryCPP_RuntimeFlavor)\$(SocketLibraryCPP_BinaryConfig)\</SocketLibraryCPP_LibDir>
+      <SocketLibraryCPP_LibFullPath>$(SocketLibraryCPP_LibDir)$(SocketLibraryCPP_LibName)</SocketLibraryCPP_LibFullPath>
+    </PropertyGroup>
+
+    <Error Condition="'$(SocketLibraryCPP_RuntimeFlavor)'==''"
+           Text="SocketLibraryCPP: Could not resolve RuntimeLibrary from ClCompile metadata. Raw='@(_SocketLibraryCPP_RuntimeLibrary)'" />
+    <Error Condition="!Exists('$(SocketLibraryCPP_LibFullPath)')"
+           Text="SocketLibraryCPP: Missing lib '$(SocketLibraryCPP_LibFullPath)' (Platform=$(Platform) Config=$(Configuration) Runtime='@(_SocketLibraryCPP_RuntimeLibrary)')" />
+
+    <ItemGroup>
+      <Link Include="$(SocketLibraryCPP_LibFullPath)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="SocketLibraryCPP_Dump" BeforeTargets="Link" Condition="'$(SocketLibraryCPP_EnableDiagnostics)'=='true'">
+    <Message Importance="High" Text="SocketLibraryCPP Platform=$(Platform) PlatformDir=$(SocketLibraryCPP_PlatformDir)" />
+    <Message Importance="High" Text="SocketLibraryCPP BinaryConfig=$(SocketLibraryCPP_BinaryConfig)" />
+    <Message Importance="High" Text="SocketLibraryCPP RuntimeFlavor=$(SocketLibraryCPP_RuntimeFlavor)" />
+    <Message Importance="High" Text="SocketLibraryCPP Raw RuntimeLibrary property='$(RuntimeLibrary)'" />
+    <Message Importance="High" Text="SocketLibraryCPP Raw ClCompile metadata='$(_SocketLibraryCPP_RuntimeLibrary)'" />
+    <Message Importance="High" Text="SocketLibraryCPP LibDir=$(SocketLibraryCPP_LibDir)" />
+    <Message Importance="High" Text="SocketLibraryCPP LibExists=$([System.IO.File]::Exists('$(SocketLibraryCPP_LibDir)$(SocketLibraryCPP_LibName)'))" />
+  </Target>
+
   <ItemDefinitionGroup>
-    <ClCompile>
-      <AdditionalIncludeDirectories>
-        $(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)
-      </AdditionalIncludeDirectories>
-    </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>
-        $(SocketLibraryCPP_LibDir);%(AdditionalLibraryDirectories)
-      </AdditionalLibraryDirectories>
-      <AdditionalDependencies>
-        $(SocketLibraryCPP_LibName);%(AdditionalDependencies)
-      </AdditionalDependencies>
+      <AdditionalDependencies>Ws2_32.lib;%(Link.AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 </Project>

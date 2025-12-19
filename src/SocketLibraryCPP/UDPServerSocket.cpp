@@ -173,7 +173,7 @@ namespace SocketLibrary {
         break;
       }
       if(byteCount >= 0) {
-        TrafficUpdate("Received " + std::to_string(byteCount) + " bytes");
+		TrafficUpdate("Received " + std::to_string(byteCount) + " bytes from " + GetSocketAddress(clientAddress));
         OnRead(buffer.data(), static_cast<size_t>(byteCount), clientAddress);
         continue;
       }

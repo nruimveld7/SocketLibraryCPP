@@ -9,26 +9,7 @@
 
     <!-- Default the binary config to the consumer's $(Configuration) -->
     <SocketLibraryCPP_BinaryConfig Condition="'$(SocketLibraryCPP_BinaryConfig)'==''">$(Configuration)</SocketLibraryCPP_BinaryConfig>
-    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and '$(RuntimeLibrary)'=='MultiThreadedDLL'">md</SocketLibraryCPP_RuntimeFlavor>
-    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and '$(RuntimeLibrary)'=='MultiThreaded'">mt</SocketLibraryCPP_RuntimeFlavor>
-    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and '$(RuntimeLibrary)'=='MultiThreadedDebugDLL'">mdd</SocketLibraryCPP_RuntimeFlavor>
-    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'=='' and '$(RuntimeLibrary)'=='MultiThreadedDebug'">mtd</SocketLibraryCPP_RuntimeFlavor>
-    <SocketLibraryCPP_RuntimeFlavor Condition="'$(SocketLibraryCPP_RuntimeFlavor)'==''">md</SocketLibraryCPP_RuntimeFlavor>
   </PropertyGroup>
-
-  <!-- Compute LibDir (Platform + Runtime flavor + Config), fall back to Release if exact match not present -->
-  <Choose>
-    <When Condition="Exists('$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_RuntimeFlavor)\$(SocketLibraryCPP_BinaryConfig)\$(SocketLibraryCPP_LibName)')">
-      <PropertyGroup>
-        <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_RuntimeFlavor)\$(SocketLibraryCPP_BinaryConfig)\</SocketLibraryCPP_LibDir>
-      </PropertyGroup>
-    </When>
-    <Otherwise>
-      <PropertyGroup>
-        <SocketLibraryCPP_LibDir>$(SocketLibraryCPP_PackageRoot)lib\$(Platform)\$(SocketLibraryCPP_RuntimeFlavor)\Release\</SocketLibraryCPP_LibDir>
-      </PropertyGroup>
-    </Otherwise>
-  </Choose>
 
   <!-- Help IntelliSense find headers via legacy/IDE path lookups -->
   <PropertyGroup>
@@ -43,9 +24,5 @@
     <ClInclude>
       <AdditionalIncludeDirectories>$(SocketLibraryCPP_IncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClInclude>
-    <Link>
-      <AdditionalLibraryDirectories>$(SocketLibraryCPP_LibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(SocketLibraryCPP_LibName);Ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
   </ItemDefinitionGroup>
 </Project>

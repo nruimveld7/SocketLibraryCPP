@@ -43,10 +43,7 @@ $pairsRaw = foreach ($n in $pcNodes) {
 if (-not $pairsRaw -or $pairsRaw.Count -eq 0) { throw "No Configuration|Platform pairs discovered in $ProjPath" }
 $pairs = $pairsRaw | Sort-Object Platform, Configuration -Unique
 
-function Get-RuntimeFlavorsForConfiguration([string]$configuration) {
-  if ($configuration -match 'Debug') { return @('mdd','mtd') }
-  return @('md','mt')
-}
+$runtimeFlavors = @('md','mt','mdd','mtd')
 
 # -- Single run log setup --
 $LogsDir  = Join-Path $RepoRoot 'build\logs'
@@ -62,7 +59,7 @@ $RunLog   = Join-Path $LogsDir ("BuildLibs_{0}.log" -f $RunStamp)
 "MSBuild : $MSBuild"                                                    | Out-File -FilePath $RunLog -Append
 $pairList = ($pairs | ForEach-Object { "$($_.Configuration)|$($_.Platform)" }) -join ', '
 "Pairs   : $pairList"                                                   | Out-File -FilePath $RunLog -Append
-"Flavors : Debug -> mdd/mtd, else md/mt"                                | Out-File -FilePath $RunLog -Append
+"Flavors : md, mt, mdd, mtd (all combinations per pair)"                | Out-File -FilePath $RunLog -Append
 "======================================================================" | Out-File -FilePath $RunLog -Append
 
 # -- Build loop (append all output to the same file) --
@@ -70,8 +67,7 @@ $errors = @()
 foreach ($p in $pairs) {
   $cfg     = $p.Configuration
   $plt     = $p.Platform
-  $flavors = Get-RuntimeFlavorsForConfiguration $cfg
-  foreach ($flavor in $flavors) {
+  foreach ($flavor in $runtimeFlavors) {
     $label = "$cfg|$plt|$flavor"
     $sep = 'Ä' * 70
     Write-Host "`n$sep`nBuilding $label`n$sep"

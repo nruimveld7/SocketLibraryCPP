@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros">
+    <SocketLibraryCPP_EnableDiagnostics>true</SocketLibraryCPP_EnableDiagnostics>
+  </PropertyGroup>
+  <PropertyGroup />
+  <ItemDefinitionGroup />
+  <ItemGroup>
+    <BuildMacro Include="SocketLibraryCPP_EnableDiagnostics">
+      <Value>$(SocketLibraryCPP_EnableDiagnostics)</Value>
+    </BuildMacro>
+  </ItemGroup>
+</Project>
