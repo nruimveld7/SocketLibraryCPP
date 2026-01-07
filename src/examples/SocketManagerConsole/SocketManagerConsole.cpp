@@ -423,7 +423,7 @@ bool SpawnSocket(
 ) {
   std::string title = socketType + " " + socketRole + " Socket - " + socketName;
   std::wstring wTitle = StringToWString(title);
-  SECURITY_ATTRIBUTES sa = {0};
+  SECURITY_ATTRIBUTES sa = { 0 };
   sa.nLength = sizeof(SECURITY_ATTRIBUTES);
   sa.bInheritHandle = TRUE;
   sa.lpSecurityDescriptor = NULL;
@@ -446,7 +446,7 @@ bool SpawnSocket(
   std::cout << "Read Pipe: " << socket.pipeRead << std::endl;
   std::cout << "Write Pipe: " << socket.pipeWrite << std::endl;
 
-  STARTUPINFO si = {0};
+  STARTUPINFO si = { 0 };
   si.cb = sizeof(STARTUPINFO);
   si.lpTitle = &wTitle[0];
   si.dwFlags = STARTF_USESHOWWINDOW;
@@ -456,7 +456,7 @@ bool SpawnSocket(
   cmdLine += std::to_wstring(reinterpret_cast<uintptr_t>(clientRead)) + L" ";
   cmdLine += std::to_wstring(reinterpret_cast<uintptr_t>(clientWrite)) + L" ";
   cmdLine += std::to_wstring(procID);
-  PROCESS_INFORMATION pi = {0};
+  PROCESS_INFORMATION pi = { 0 };
   if(CreateProcess(NULL, &cmdLine[0], NULL, NULL, TRUE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
     std::cout << "Process created successfully: PID = " << pi.dwProcessId << std::endl;
     socket.processHandle = pi.hProcess;

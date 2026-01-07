@@ -4,44 +4,43 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
-#include <windows.h>
 
 namespace SocketLibrary {
-  class WorkerGroup {
-  public:
-    WorkerGroup() = default;
-    ~WorkerGroup() noexcept;
-    WorkerGroup(const WorkerGroup&) = delete;
-    WorkerGroup& operator=(const WorkerGroup&) = delete;
-    WorkerGroup(WorkerGroup&& other) noexcept;
-    WorkerGroup& operator=(WorkerGroup&& other) noexcept;
-    bool StartWorker(
-      unsigned(__stdcall* workerFunction)(void*),
-      void* context,
-      unsigned stack = 0,
-      unsigned initFlags = 0,
-      unsigned* outID = nullptr) noexcept;
-    void StopWorkers() noexcept;
-    bool StopRequested() const noexcept;
-    bool WaitForWorkers() noexcept;
-    bool IsWorker() const noexcept;
-    int ActiveWorkerCount() const noexcept;
+	class WorkerGroup {
+	public:
+		WorkerGroup() = default;
+		~WorkerGroup() noexcept;
+		WorkerGroup(const WorkerGroup&) = delete;
+		WorkerGroup& operator=(const WorkerGroup&) = delete;
+		WorkerGroup(WorkerGroup&& other) noexcept;
+		WorkerGroup& operator=(WorkerGroup&& other) noexcept;
+		bool StartWorker(
+			unsigned(__stdcall* workerFunction)(void*),
+			void* context,
+			unsigned stack = 0,
+			unsigned initFlags = 0,
+			unsigned* outID = nullptr) noexcept;
+		void StopWorkers() noexcept;
+		bool StopRequested() const noexcept;
+		bool WaitForWorkers() noexcept;
+		bool IsWorker() const noexcept;
+		int ActiveWorkerCount() const noexcept;
 
-  private:
-    struct StartContext {
-      WorkerGroup* group;
-      unsigned(__stdcall* fn)(void*);
-      void* context;
-    };
-    struct Worker {
-      DWORD threadID;
-      HANDLE handle;
-    };
-    static unsigned __stdcall WorkerEntryPoint(void* params) noexcept;
-    static void WaitForHandles(const std::vector<HANDLE>& handles);
-    mutable std::mutex m_workersMutex;
-    std::vector<Worker> m_workers;
-    std::atomic<int> m_activeWorkers{0};
-    std::atomic<bool> m_stop{false};
-  };
+	private:
+		struct StartContext {
+			WorkerGroup* group;
+			unsigned(__stdcall* fn)(void*);
+			void* context;
+		};
+		struct Worker {
+			DWORD threadID;
+			HANDLE handle;
+		};
+		static unsigned __stdcall WorkerEntryPoint(void* params) noexcept;
+		static void WaitForHandles(const std::vector<HANDLE>& handles);
+		mutable std::mutex m_workersMutex;
+		std::vector<Worker> m_workers;
+		std::atomic<int> m_activeWorkers{ 0 };
+		std::atomic<bool> m_stop{ false };
+	};
 } //namespace SocketLibrary
