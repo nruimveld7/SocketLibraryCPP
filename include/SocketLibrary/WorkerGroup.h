@@ -1,6 +1,5 @@
 #pragma once
 
-#include "WinSock2First.h"
 #include <mutex>
 #include <atomic>
 #include <vector>

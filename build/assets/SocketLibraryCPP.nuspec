@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
   <metadata>
     <id>SocketLibraryCPP</id>
-    <version>1.2.4</version>
+    <version>1.2.5</version>
     <authors>Noah Ruimveld</authors>
     <owners>Noah Ruimveld</owners>
     <description>Windows static C++ socket library (WinSock2). Ready-to-use TCP/UDP client &amp; server classes with async callbacks, fixed-length TCP framing, and automatic MSBuild integration (x86/x64, Debug/Release).</description>
@@ -13,6 +13,7 @@
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <icon>SocketLibraryCPP.png</icon>
     <releaseNotes>
+      - 1.2.5: Add explicit Windows.h include where winsock2 is included (WinSock2First.h)
       - 1.2.4: Fix rogue Windows.h include
       - 1.2.3: Fix runtime library support build issues
       - 1.2.2: Support more common runtime library settings

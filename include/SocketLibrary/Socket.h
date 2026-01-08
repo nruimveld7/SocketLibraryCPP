@@ -1,11 +1,11 @@
 #pragma once
 
-#include "SocketLibrary/WinSock2First.h"
 #include <string>
 #include <functional>
 #include <mutex>
 #include <shared_mutex>
 #include <atomic>
+#include "SocketLibrary/WinSock2First.h"
 #include "SocketLibrary/WorkerGroup.h"
 
 namespace SocketLibrary {

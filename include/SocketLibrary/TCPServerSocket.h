@@ -1,6 +1,5 @@
 #pragma once
 
-#include "SocketLibrary/WinSock2First.h"
 #include <string>
 #include <vector>
 #include <functional>
@@ -12,6 +11,7 @@
 #include <mutex>
 #include <exception>
 #include <type_traits>
+#include "SocketLibrary/WinSock2First.h"
 #include "SocketLibrary/Socket.h"
 #include "SocketLibrary/ConnectionManager.h"
 
