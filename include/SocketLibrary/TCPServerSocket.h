@@ -39,6 +39,7 @@ namespace SocketLibrary {
     bool Open();
     bool Close();
     std::vector<std::string> GetClientAddresses() const;
+	std::string GetClientAddress(SOCKET clientSocket) const;
     void SetNoDelay(bool enabled, bool applyToAll = false) noexcept;
     void SetKeepAlive(bool enabled, DWORD timeMs = 30'000, DWORD intervalMs = 10'000, bool applyToAll = false) noexcept;
 

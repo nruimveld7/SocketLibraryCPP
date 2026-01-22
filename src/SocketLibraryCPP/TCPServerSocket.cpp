@@ -161,6 +161,10 @@ namespace SocketLibrary {
     return addresses;
   }
 
+  std::string TCPServerSocket::GetClientAddress(SOCKET clientSocket) const {
+	  return m_connections.FindAddress(clientSocket);
+  }
+
   void TCPServerSocket::SetNoDelay(bool enabled, bool applyToAll) noexcept {
     {
       std::unique_lock lock(m_socketOptionsMutex);
